@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import getSupabaseClient from './utils/supabaseClient';
 import AuthPage from './pages/AuthPage';
-import Navigation from './components/Navigation';
+import Navigation from './components/Navigation.jsx';
 import DashboardPage from './pages/DashboardPage';
 import LoadingOverlay from './components/LoadingOverlay';
 
