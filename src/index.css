@@ -1,0 +1,573 @@
+/* === Variáveis Globais e Estilos Base (do antigo globals.css) === */
+:root {
+  --primary-color: #3b82f6;
+  --secondary-color: #64748b;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --info-color: #06b6d4;
+  /* Adicionando variáveis comuns que estavam faltando */
+  --text-primary: #1f2937;
+  --text-secondary: #6b7280;
+  --bg-light: #f9fafb;
+  --bg-white: #ffffff;
+  --border-color: #e5e7eb;
+  --input-border: #d1d5db;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f8fafc; /* slate-50 */
+  color: var(--text-primary); /* Cor primária do texto */
+}
+
+#root {
+  min-height: 100vh;
+  /* display: flex e flex-direction: column removidos daqui, pois App.js controla o layout */
+}
+
+/* === Estilos de Autenticação (do antigo globals.css) === */
+.auth-container {
+  display: flex;
+  min-height: 100vh;
+  align-items: center;
+  justify-content: center;
+  background-color: #f1f5f9; /* slate-100 */
+  padding: 1rem; /* Espaçamento responsivo */
+}
+
+.auth-card {
+  background: var(--bg-white);
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  width: 100%;
+  max-width: 28rem;
+  padding: 2rem 2.5rem; /* Ajustado padding */
+}
+
+.auth-title {
+  font-size: 1.5rem; /* 24px */
+  line-height: 2rem;
+  font-weight: 600; /* Semibold */
+  text-align: center;
+  color: var(--text-primary); /* Usando variável */
+  margin-bottom: 1.5rem;
+}
+
+.auth-footer {
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 0.875rem; /* 14px */
+  color: var(--text-secondary); /* Usando variável */
+}
+
+.auth-link {
+  color: var(--primary-color);
+  font-weight: 500; /* Medium */
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+  color: #2563eb; /* blue-600 */
+}
+
+/* === Estilos de Componentes (do antigo components.css) === */
+
+.pie-chart-container {
+  width: 100%;
+  margin-bottom: 1.5rem;
+}
+
+.pie-chart-wrapper {
+  position: relative;
+  height: 300px;
+  width: 100%;
+}
+
+.summary-grid {
+  display: grid;
+  /* Ajusta colunas responsivamente */
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+}
+
+.summary-card {
+  background-color: #f8fafc; /* slate-50 */
+  border-radius: 0.5rem;
+  padding: 1rem;
+  text-align: center;
+  border: 1px solid var(--border-color); /* Borda sutil */
+}
+
+.summary-card h4 {
+  font-size: 0.875rem; /* 14px */
+  color: var(--text-secondary); /* Cinza */
+  margin-bottom: 0.5rem;
+  font-weight: 500; /* Medium */
+}
+
+.summary-card .value {
+  font-size: 1.25rem; /* 20px */
+  font-weight: 600; /* Semibold */
+  color: var(--text-primary); /* Cor primária do texto */
+}
+
+.error-message {
+  padding: 0.75rem 1rem; /* Padding ajustado */
+  border-radius: 0.375rem; /* 6px */
+  background-color: #fef2f2; /* red-50 */
+  color: #b91c1c; /* red-700 */
+  border: 1px solid #fecaca; /* red-300 */
+  margin-bottom: 1rem;
+  display: flex; /* Alinha ícone e texto */
+  align-items: center;
+}
+
+.error-message i {
+  margin-right: 0.5rem;
+}
+
+.loading-state, .empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary); /* Cinza */
+  min-height: 150px; /* Altura mínima */
+}
+
+.loading-state i {
+  font-size: 2rem;
+  color: var(--primary-color); /* Azul */
+  margin-bottom: 1rem;
+  animation: spin 1s linear infinite;
+}
+
+.empty-state i {
+  font-size: 2rem;
+  margin-bottom: 1rem;
+  color: #cbd5e1; /* slate-300 */
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 50; /* Mantido z-index original */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem; /* Espaçamento */
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 0.5rem;
+  width: 100%;
+  max-width: 32rem; /* Mantida largura original */
+  padding: 1.5rem;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04); /* Sombra mais pronunciada */
+  max-height: 90vh; /* Altura máxima */
+  overflow-y: auto; /* Scroll se necessário */
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem; /* Padding inferior */
+  border-bottom: 1px solid var(--border-color); /* Linha separadora */
+}
+
+.modal-title {
+  font-size: 1.25rem; /* 20px */
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary); /* Cinza */
+  cursor: pointer;
+  font-size: 1.25rem; /* 20px */
+  padding: 0.25rem; /* Área de clique */
+}
+.modal-close:hover {
+  color: var(--text-primary);
+}
+
+.modal-body {
+  margin-bottom: 1.5rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1rem; /* Espaçamento acima */
+  border-top: 1px solid var(--border-color); /* Linha separadora */
+}
+
+
+/* --- Cards KPI --- */
+.kpi-card {
+background-color: var(--bg-white);
+padding: 1.5rem; /* Mais padding */
+border-radius: 0.5rem;
+box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+display: flex; /* Flex para controle vertical */
+flex-direction: column;
+justify-content: space-between; /* Espaça título/valor da comparação */
+min-height: 100px; /* Altura mínima */
+border: 1px solid var(--border-color); /* Borda sutil */
+}
+
+.kpi-title {
+font-size: 0.875rem; /* 14px */
+font-weight: 500; /* Medium */
+color: var(--text-secondary);
+margin-bottom: 0.5rem; /* Espaço menor */
+line-height: 1.3; /* Ajuste de linha */
+display: block; /* Para garantir que o margin-bottom funcione */
+}
+
+.kpi-value {
+font-size: 2rem; /* 32px - Maior */
+font-weight: 700; /* Bold */
+color: var(--text-primary);
+line-height: 1.1; /* Mais justo */
+margin-bottom: 0.5rem; /* Espaço se houver comparação */
+display: block; /* Para garantir que o margin-bottom funcione */
+}
+
+.kpi-comparison { /* Estilo para o container da comparação */
+ font-size: 0.75rem; /* 12px */
+ color: var(--text-secondary);
+ margin-top: auto; /* Empurra para baixo */
+ line-height: 1.4;
+ display: block; /* Para garantir que o margin-top funcione */
+}
+
+/* Estilos específicos para texto de tendência (dentro de .kpi-comparison se usar span) */
+.trend-up { color: var(--success-color); }
+.trend-down { color: var(--danger-color); }
+.trend-up i, .trend-down i { margin-right: 0.25rem; }
+
+/* --- Card de Gráfico --- */
+.chart-card {
+  background-color: white;
+  padding: 1.5rem; /* Padding aumentado */
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  margin-bottom: 1.5rem; /* Espaço abaixo */
+}
+
+.chart-title {
+  font-size: 1rem; /* 16px */
+  font-weight: 600; /* Semibold */
+  color: var(--text-primary); /* Cor primária do texto */
+  margin-bottom: 1.5rem; /* Mais espaço */
+}
+
+.chart-container {
+  position: relative;
+  height: 300px; /* Altura padrão */
+  width: 100%;
+}
+
+/* --- Container de Tabela --- */
+.table-container {
+box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+border-radius: 0.5rem; /* Borda arredondada */
+overflow: hidden; /* Para conter a borda */
+border: 1px solid var(--border-color); /* Borda sutil */
+}
+
+/* --- Ícone de Ordenação na Tabela --- */
+.sortable .sort-icon {
+  opacity: 0.5;
+  margin-left: 0.5rem;
+  transition: opacity 0.2s ease-in-out;
+  color: var(--text-muted); /* Cor padrão mais sutil */
+}
+.sortable:hover .sort-icon {
+  opacity: 1;
+  color: var(--text-secondary);
+}
+.sortable .sort-icon.active { /* Classe adicionada via JS */
+  opacity: 1;
+  color: var(--primary-color); /* Cor primária quando ativa */
+}
+
+/* --- Overlay de Carregamento --- */
+.overlay {
+  position: fixed;
+  inset: 0; /* Cobre tudo */
+  background-color: rgba(255, 255, 255, 0.85); /* Branco mais opaco */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000; /* Alto z-index */
+  /* Animação suave (opcional) */
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0s linear 0.3s;
+}
+.overlay.active { /* Classe a ser adicionada via JS */
+  opacity: 1;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+.loading-spinner {
+  border: 4px solid rgba(0, 0, 0, 0.1);
+  border-left-color: var(--primary-color); /* Usa a cor primária */
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite; /* Reusa a animação spin */
+  margin: 0 auto 1rem auto; /* Espaço abaixo */
+}
+
+.loading-text {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+
+/* --- Container de Filtros --- */
+.filter-container {
+ background-color: var(--bg-white);
+ padding: 1rem 1.5rem; /* Padding ajustado */
+ border-radius: 0.5rem;
+ box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+ margin-bottom: 1.5rem;
+ /* Flex para alinhar itens */
+ display: flex;
+ flex-wrap: wrap; /* Quebra linha se necessário */
+ gap: 1rem; /* Espaço entre os filtros */
+ align-items: flex-end; /* Alinha na base */
+}
+/* Estilo para cada grupo de filtro */
+.filter-group {
+  flex: 1 1 auto; /* Permite crescer e encolher */
+  min-width: 150px; /* Largura mínima */
+}
+
+/* --- Labels e Inputs --- */
+.input-label {
+  display: block;
+  font-size: 0.875rem; /* 14px */
+  font-weight: 500; /* Medium */
+  color: var(--text-secondary); /* Cinza */
+  margin-bottom: 0.25rem; /* Espaço abaixo do label */
+}
+
+.input-field {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.25rem;
+  border: 1px solid var(--input-border); /* Cinza 300 */
+  border-radius: 0.375rem; /* 6px */
+  box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* Sombra interna sutil */
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  background-color: var(--bg-white); /* Fundo branco */
+  color: var(--text-primary); /* Cor do texto */
+}
+.input-field::placeholder {
+  color: var(--text-muted); /* Cor do placeholder */
+}
+.input-field:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3); /* Sombra de foco azul */
+}
+/* Estilo específico para selects */
+select.input-field {
+  appearance: none; /* Remove aparência padrão */
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e"); /* Ícone de seta */
+  background-position: right 0.5rem center;
+  background-repeat: no-repeat;
+  background-size: 1.5em 1.5em;
+  padding-right: 2.5rem; /* Espaço para a seta */
+}
+
+.input-field-sm { /* Variação menor */
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+  font-size: 0.75rem; /* 12px */
+}
+
+
+/* --- Botões --- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem 1.25rem; /* Padding padrão */
+  border-radius: 0.375rem; /* 6px */
+  font-weight: 500; /* Medium */
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.25rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.1s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+.btn:focus-visible { /* Foco visível */
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4);
+}
+.btn:disabled, .btn.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.btn-primary {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #2563eb; /* blue-600 */
+  border-color: #2563eb;
+}
+
+.btn-secondary {
+  background-color: white;
+  color: var(--text-primary);
+  border-color: var(--input-border); /* gray-300 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* Sombra sutil */
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: var(--bg-light); /* gray-50 */
+  border-color: #9ca3af; /* gray-400 */
+  color: var(--text-primary);
+}
+
+.btn-icon {
+  gap: 0.5rem; /* Espaço ícone-texto */
+}
+.btn-icon i {
+  font-size: 1em; /* Tamanho relativo ao texto */
+  line-height: 1; /* Alinhamento */
+}
+
+.btn-sm { /* Botão pequeno */
+  padding: 0.375rem 0.75rem;
+  font-size: 0.75rem; /* 12px */
+  line-height: 1rem;
+  border-radius: 0.25rem; /* 4px */
+}
+
+.btn-xs { /* Botão extra pequeno */
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem; /* 12px */
+  line-height: 1rem;
+  border-radius: 0.25rem; /* 4px */
+}
+
+/* --- Upload de Arquivo --- */
+.file-upload-container {
+border: 2px dashed var(--input-border); /* gray-300 */
+border-radius: 0.5rem;
+padding: 2rem;
+text-align: center;
+background-color: var(--bg-light); /* gray-50 */
+transition: border-color 0.2s ease, background-color 0.2s ease;
+margin-bottom: 1rem; /* Espaço abaixo */
+position: relative; /* Para o botão de fechar */
+}
+.file-upload-container label { /* Torna o label clicável */
+  cursor: pointer;
+}
+.file-upload-container:hover {
+border-color: var(--primary-color);
+background-color: #eff6ff; /* blue-50 */
+}
+
+.file-upload-text {
+color: var(--text-secondary); /* Cinza */
+font-size: 0.875rem; /* 14px */
+margin-bottom: 1rem;
+}
+.file-upload-text .upload-link /* Estilo específico para o link dentro do texto */ {
+color: var(--primary-color);
+font-weight: 500;
+text-decoration: underline;
+cursor: pointer;
+}
+.file-upload-text i.upload-icon /* Ícone opcional acima do texto */ {
+  display: block;
+  font-size: 2.5rem; /* Maior */
+  color: var(--text-muted); /* Cinza claro */
+  margin-bottom: 1rem;
+}
+
+.file-upload-error { /* Mensagem de erro específica do upload */
+margin-top: 1rem;
+font-size: 0.875rem; /* 14px */
+color: var(--danger-color); /* Vermelho */
+background-color: #fef2f2; /* Fundo vermelho claro */
+border: 1px solid #fecaca; /* Borda vermelha clara */
+padding: 0.5rem 1rem;
+border-radius: 0.375rem;
+display: inline-block; /* Para não ocupar largura total */
+}
+
+/* --- Estilos para Popover via Portal (do antigo components.css) --- */
+.popover-via-portal {
+position: fixed; /* Fundamental */
+background-color: #2d3748; /* gray-800 */
+color: white;
+padding: 6px 10px;
+border-radius: 4px;
+font-size: 0.75rem; /* 12px */
+line-height: 1.25;
+z-index: 1100; /* Alto z-index */
+box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+max-width: 300px;
+word-wrap: break-word;
+/* Animação opcional */
+opacity: 0;
+transform: translateY(4px);
+transition: opacity 0.2s ease, transform 0.2s ease;
+pointer-events: none; /* Não interativo por padrão */
+}
+.popover-via-portal.visible { /* Classe adicionada via JS */
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto; /* Interativo quando visível */
+}
+
+
+/* --- Estilo básico para o texto truncado (do antigo components.css) --- */
+.truncate-ellipsis {
+display: block; /* Ou inline-block conforme necessidade */
+white-space: nowrap;
+overflow: hidden;
+text-overflow: ellipsis;
+/* Adicione max-width se necessário para o elemento pai não se expandir */
+/* max-width: 100%; */
+}
+
+/* Adiciona cursor apenas quando truncado */
+.is-clickable-truncated {
+ cursor: pointer; /* Ou help */
+}
