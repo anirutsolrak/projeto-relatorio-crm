@@ -13,7 +13,8 @@ function Navigation({
     const reportError = (error) => console.error("Navigation Error:", error);
     try {
         const menuItems = [
-            { name: 'Dashboard', icon: 'fa-gauge', path: '/' }
+            { name: 'Dashboard', icon: 'fa-gauge', path: '/' },
+            { name: 'Logística', icon: 'fa-truck-fast', path: '/logistica' }
         ];
 
         const currentWidth = isCollapsed ? collapsedWidth : expandedWidth;
@@ -71,7 +72,6 @@ function Navigation({
                                         if (activePage !== item.path && onNavigate) {
                                             onNavigate(item.path);
                                         }
-                                        if (mobileMenuOpen) toggleMobileMenu();
                                     }}
                                     className={`w-full text-left py-3 rounded-md flex items-center transition-colors duration-150 relative group whitespace-nowrap ${activePage === item.path ? 'bg-blue-100 text-blue-700 font-semibold' : 'text-slate-700 hover:bg-slate-200 hover:text-slate-900'}`}
                                     style={{ paddingLeft: isCollapsed ? '1rem' : '1rem', justifyContent: isCollapsed ? 'center' : 'flex-start' }}
