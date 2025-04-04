@@ -21,8 +21,14 @@ function LineChartMobileSummary({ title, primaryMetricLabel = "Principal", prima
                     {primarySummary?.startValue !== undefined && (<div className="flex justify-between"><span className="text-gray-500">{primaryMetricLabel} (Início):</span><span className="font-medium">{formatSummaryValue(primarySummary.startValue, primarySummary.unit, primarySummary.decimals)}</span></div>)}
                     {primarySummary?.endValue !== undefined && (<div className="flex justify-between"><span className="text-gray-500">{primaryMetricLabel} (Fim):</span><span className="font-medium">{formatSummaryValue(primarySummary.endValue, primarySummary.unit, primarySummary.decimals)}</span></div>)}
                     {primarySummary?.changePercent !== undefined && (<div className="flex justify-between"><span className="text-gray-500">{primaryMetricLabel} (Variação %):</span><span className={`font-medium ${getChangeColor(primarySummary.changePercent)}`}>{formatSummaryValue(primarySummary.changePercent, 'percent')}</span></div>)}
-                    {secondarySummary?.averageValue !== undefined && (<div className="flex justify-between border-t pt-1 mt-1"><span className="text-gray-500">{secondaryMetricLabel} (Média Período):</span><span className="font-medium">{formatSummaryValue(secondarySummary.averageValue, secondarySummary.unit, secondarySummary.decimals)}</span></div>)}
-                    {primarySummary && !secondarySummary && primarySummary.label && primarySummary.value !== undefined && (<div className="flex justify-between"><span className="text-gray-500">{primarySummary.label}:</span><span className="font-medium">{formatSummaryValue(primarySummary.value, primarySummary.unit, primarySummary.decimals)}</span></div>)}
+                    {/* Ajuste para Média - Secundário ou Primário sem Variação */}
+                    {secondarySummary?.averageValue !== undefined ? (
+                         <div className="flex justify-between border-t pt-1 mt-1"><span className="text-gray-500">{secondaryMetricLabel} (Média Período):</span><span className="font-medium">{formatSummaryValue(secondarySummary.averageValue, secondarySummary.unit, secondarySummary.decimals)}</span></div>
+                     ) : primarySummary?.averageValue !== undefined ? ( // Caso Esteira que só tem primário
+                         <div className="flex justify-between border-t pt-1 mt-1"><span className="text-gray-500">{primaryMetricLabel} (Média Período):</span><span className="font-medium">{formatSummaryValue(primarySummary.averageValue, primarySummary.unit, primarySummary.decimals)}</span></div>
+                     ) : null}
+                    {/* Caso específico para KIPPanel que passa label/value (se necessário no futuro) */}
+                    {primarySummary && !secondarySummary && primarySummary.label && primarySummary.value !== undefined && !primarySummary.startValue && (<div className="flex justify-between"><span className="text-gray-500">{primarySummary.label}:</span><span className="font-medium">{formatSummaryValue(primarySummary.value, primarySummary.unit, primarySummary.decimals)}</span></div>)}
                 </div>
             </div>
             <div className="mt-4 text-right"><button onClick={onExpandClick} className="btn btn-secondary btn-xs py-1 px-2">{expandButtonText || "Ver Gráfico"}</button></div>
@@ -81,25 +87,53 @@ function DashboardPage({ user, onLogout }) {
     const handleUploadSuccess = useCallback(async (processedData) => { setIsLoading(true); setFetchError(null); setShowUploader(false); const supabase = getSupabaseClient(); const { dailyMetrics, summaryMetrics } = processedData; if (!Array.isArray(dailyMetrics) || !Array.isArray(summaryMetrics)) { setFetchError("Erro interno: Dados inválidos recebidos."); setIsLoading(false); return; } try { const upsertDaily = supabase.from('daily_proposal_metrics').upsert(dailyMetrics, { onConflict: 'metric_date, category, sub_category' }); const upsertSummary = supabase.from('monthly_summary_metrics').upsert(summaryMetrics, { onConflict: 'metric_month, category, sub_category' }); const [dailyResult, summaryResult] = await Promise.all([upsertDaily, upsertSummary]); let errors = []; if (dailyResult.error) errors.push(`Erro Diário: ${dailyResult.error.message}`); if (summaryResult.error) errors.push(`Erro Resumo: ${summaryResult.error.message}`); if (errors.length > 0) { setFetchError(errors.join('; ')); reportError({ daily: dailyResult.error, summary: summaryResult.error }, 'handleUploadSuccess'); } else { console.log("[handleUploadSuccess] Upload successful. Refreshing data..."); fetchAndSetDashboardData(period.startDate, period.endDate); } } catch (catchError) { reportError(catchError, 'handleUploadSuccess'); setFetchError(`Erro inesperado durante o salvamento: ${catchError.message}`); } finally { setIsLoading(false); } }, [period, fetchAndSetDashboardData]);
     const typedChartDisplayData = useMemo(() => { const fullData = dashboardData?.typedDetails?.fullData || []; if (fullData.length === 0) return { labels: [], datasets: [] }; const dataToShow = isTypedChartExpanded ? fullData : fullData.slice(0, 3); return { labels: dataToShow.map(e => e[0]), datasets: [{ label: 'Digitadas', data: dataToShow.map(e => e[1]), backgroundColor: 'rgba(54, 162, 235, 0.6)', borderColor: 'rgba(54, 162, 235, 1)', borderWidth: 1 }] }; }, [dashboardData?.typedDetails?.fullData, isTypedChartExpanded]);
     const notTypedChartDisplayData = useMemo(() => { const fullData = dashboardData?.notTypedDetails?.fullData || []; if (fullData.length === 0) return { labels: [], datasets: [] }; const dataToShow = isNotTypedChartExpanded ? fullData : fullData.slice(0, 3); return { labels: dataToShow.map(e => e[0]), datasets: [{ label: 'Não Digitadas', data: dataToShow.map(e => e[1]), backgroundColor: 'rgba(255, 99, 132, 0.6)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1 }] }; }, [dashboardData?.notTypedDetails?.fullData, isNotTypedChartExpanded]);
-    // --- Função de Cálculo de Resumo COM LOGS ---
-     const calculateLineChartSummary = useCallback((data, label, unit = null, decimals = 0) => {
-          console.log(`[calculateLineChartSummary] Input data for ${label || 'metric'}:`, JSON.stringify(data)); // Log JSON para ver nulls/zeros
-         if (!data || !Array.isArray(data) || data.length === 0) return { startValue: 'N/A', endValue: 'N/A', changePercent: 'N/A', averageValue: 'N/A', unit, decimals };
-         const validValues = data.filter(v => typeof v === 'number' && !isNaN(v));
-          console.log(`[calculateLineChartSummary] Filtered validValues for ${label || 'metric'}:`, validValues); // Log valores válidos
-         if (validValues.length === 0) return { startValue: 'N/A', endValue: 'N/A', changePercent: 'N/A', averageValue: 'N/A', unit, decimals };
-         const startValue = validValues[0];
-         const endValue = validValues[validValues.length - 1];
-         const averageValue = validValues.reduce((sum, v) => sum + v, 0) / validValues.length;
-         let changePercent = 'N/A';
-         if (startValue === 0) { changePercent = (endValue === 0) ? 0 : Infinity; }
-         else { changePercent = ((endValue - startValue) / Math.abs(startValue)) * 100; }
-         const result = { startValue, endValue, changePercent, averageValue, unit, decimals };
-          console.log(`[calculateLineChartSummary] Result for ${label || 'metric'}:`, result); // Log resultado
-         return result;
-    }, []);
-    const accountsChartData = useMemo(() => { const rawLabels = dashboardData?.accountsTrends?.labels || []; const activeAccountsData = dashboardData?.accountsTrends?.activeAccounts || []; const averageLimitData = dashboardData?.accountsTrends?.averageLimit || []; if (rawLabels.length === 0) return { labels: [], datasets: [], summaryAccounts: null, summaryLimit: null }; const formattedLabels = rawLabels.map(l => formatDateLabel(l, isMobileView && isAccountsChartExpanded)); const pointRadius = rawLabels.length > 30 ? (isAccountsChartExpanded ? 1 : 0) : (isMobileView ? 2 : 3); const pointHoverRadius = rawLabels.length > 30 ? 3 : (isMobileView ? 4 : 5); const summaryAccounts = calculateLineChartSummary(activeAccountsData, 'Contas Ativas', null, 0); const summaryLimit = calculateLineChartSummary(averageLimitData, 'Limite Médio', 'currency', 0); return { labels: formattedLabels, datasets: [ { label: 'Contas Ativas (Acum.)', data: activeAccountsData, borderColor: 'rgb(75, 192, 192)', backgroundColor: 'rgba(75, 192, 192, 0.2)', tension: 0.1, yAxisID: 'y', fill: true, pointRadius, pointHoverRadius, spanGaps: true }, { label: 'Limite Médio (R$)', data: averageLimitData, borderColor: 'rgb(153, 102, 255)', backgroundColor: 'rgba(153, 102, 255, 0.2)', tension: 0.1, yAxisID: 'y1', fill: true, pointRadius, pointHoverRadius, spanGaps: true } ], summaryAccounts: summaryAccounts, summaryLimit: summaryLimit }; }, [dashboardData?.accountsTrends, isMobileView, isAccountsChartExpanded, calculateLineChartSummary]);
-    const esteiraChartData = useMemo(() => { const rawLabels = dashboardData?.esteiraTrends?.labels || []; const datasetsRaw = dashboardData?.esteiraTrends?.datasets || []; if (rawLabels.length === 0 || datasetsRaw.length === 0) return { labels: [], datasets: [], summary: null }; const formattedLabels = rawLabels.map(l => formatDateLabel(l, isMobileView && isEsteiraChartExpanded)); const pointRadius = rawLabels.length > 30 ? (isEsteiraChartExpanded ? 1 : 0) : (isMobileView ? 2 : 3); const pointHoverRadius = rawLabels.length > 30 ? 3 : (isMobileView ? 4 : 5); const datasets = datasetsRaw.map(ds => ({ ...ds, pointRadius, pointHoverRadius })); const dailyTotals = rawLabels.map((_, index) => { let sum = 0; let hasValue = false; datasets.forEach(ds => { if (ds.data && typeof ds.data[index] === 'number' && !isNaN(ds.data[index])) { sum += ds.data[index]; hasValue = true; } }); return hasValue ? sum : null; }); const summary = calculateLineChartSummary(dailyTotals, 'Esteira Total', null, 0); return { labels: formattedLabels, datasets: datasets, summary: summary }; }, [dashboardData?.esteiraTrends, isMobileView, isEsteiraChartExpanded, calculateLineChartSummary]);
+
+    // --- Ajuste na função de cálculo de resumo ---
+    const calculateLineChartSummary = useCallback((data, label, unit = null, decimals = 0) => {
+        console.log(`[calculateLineChartSummary] Input data for ${label || 'metric'}:`, JSON.stringify(data)); // DEBUG
+        if (!data || !Array.isArray(data) || data.length === 0) { return { startValue: 'N/A', endValue: 'N/A', changePercent: 'N/A', averageValue: 'N/A', unit, decimals }; }
+
+        // Encontrar o primeiro e último valor válido (não-nulo, não-NaN) no array ORIGINAL
+        let actualStartValue = 'N/A';
+        for (let i = 0; i < data.length; i++) {
+            if (typeof data[i] === 'number' && !isNaN(data[i])) {
+                actualStartValue = data[i];
+                break;
+            }
+        }
+
+        let actualEndValue = 'N/A';
+        for (let i = data.length - 1; i >= 0; i--) {
+            if (typeof data[i] === 'number' && !isNaN(data[i])) {
+                actualEndValue = data[i];
+                break;
+            }
+        }
+
+        // Calcular média usando SOMENTE os valores válidos (incluindo zeros)
+        const validValues = data.filter(v => typeof v === 'number' && !isNaN(v));
+        console.log(`[calculateLineChartSummary] Filtered validValues for Average (${label}):`, validValues); // DEBUG
+        const averageValue = validValues.length > 0
+            ? validValues.reduce((sum, v) => sum + v, 0) / validValues.length
+            : 'N/A';
+
+        // Calcular variação percentual
+        let changePercent = 'N/A';
+        if (actualStartValue !== 'N/A' && actualEndValue !== 'N/A') {
+            if (actualStartValue === 0) {
+                changePercent = (actualEndValue === 0) ? 0 : Infinity;
+            } else {
+                changePercent = ((actualEndValue - actualStartValue) / Math.abs(actualStartValue)) * 100;
+            }
+        }
+
+        const result = { startValue: actualStartValue, endValue: actualEndValue, changePercent, averageValue, unit, decimals };
+        console.log(`[calculateLineChartSummary] Result for ${label || 'metric'}:`, result); // DEBUG
+        return result;
+    }, []); // Nenhuma dependência externa, a função em si não muda
+
+    const accountsChartData = useMemo(() => { const rawLabels = dashboardData?.accountsTrends?.labels || []; const activeAccountsData = dashboardData?.accountsTrends?.activeAccounts || []; const averageLimitData = dashboardData?.accountsTrends?.averageLimit || []; console.log("[accountsChartData] Raw activeAccounts:", JSON.stringify(activeAccountsData)); console.log("[accountsChartData] Raw averageLimit:", JSON.stringify(averageLimitData)); if (rawLabels.length === 0) return { labels: [], datasets: [], summaryAccounts: null, summaryLimit: null }; const formattedLabels = rawLabels.map(l => formatDateLabel(l, isMobileView && isAccountsChartExpanded)); const pointRadius = rawLabels.length > 30 ? (isAccountsChartExpanded ? 1 : 0) : (isMobileView ? 2 : 3); const pointHoverRadius = rawLabels.length > 30 ? 3 : (isMobileView ? 4 : 5); const summaryAccounts = calculateLineChartSummary(activeAccountsData, 'Contas Ativas', null, 0); const summaryLimit = calculateLineChartSummary(averageLimitData, 'Limite Médio', 'currency', 0); return { labels: formattedLabels, datasets: [ { label: 'Contas Ativas (Acum.)', data: activeAccountsData, borderColor: 'rgb(75, 192, 192)', backgroundColor: 'rgba(75, 192, 192, 0.2)', tension: 0.1, yAxisID: 'y', fill: true, pointRadius, pointHoverRadius, spanGaps: true }, { label: 'Limite Médio (R$)', data: averageLimitData, borderColor: 'rgb(153, 102, 255)', backgroundColor: 'rgba(153, 102, 255, 0.2)', tension: 0.1, yAxisID: 'y1', fill: true, pointRadius, pointHoverRadius, spanGaps: true } ], summaryAccounts: summaryAccounts, summaryLimit: summaryLimit }; }, [dashboardData?.accountsTrends, isMobileView, isAccountsChartExpanded, calculateLineChartSummary]);
+    const esteiraChartData = useMemo(() => { const rawLabels = dashboardData?.esteiraTrends?.labels || []; const datasetsRaw = dashboardData?.esteiraTrends?.datasets || []; if (rawLabels.length === 0 || datasetsRaw.length === 0) return { labels: [], datasets: [], summary: null }; const formattedLabels = rawLabels.map(l => formatDateLabel(l, isMobileView && isEsteiraChartExpanded)); const pointRadius = rawLabels.length > 30 ? (isEsteiraChartExpanded ? 1 : 0) : (isMobileView ? 2 : 3); const pointHoverRadius = rawLabels.length > 30 ? 3 : (isMobileView ? 4 : 5); const datasets = datasetsRaw.map(ds => ({ ...ds, pointRadius, pointHoverRadius })); const dailyTotals = rawLabels.map((_, index) => { let sum = 0; let hasValue = false; datasets.forEach(ds => { if (ds.data && typeof ds.data[index] === 'number' && !isNaN(ds.data[index])) { sum += ds.data[index]; hasValue = true; } }); return hasValue ? sum : null; }); console.log("[esteiraChartData] Calculated dailyTotals:", JSON.stringify(dailyTotals)); const summary = calculateLineChartSummary(dailyTotals, 'Esteira Total', null, 0); return { labels: formattedLabels, datasets: datasets, summary: summary }; }, [dashboardData?.esteiraTrends, isMobileView, isEsteiraChartExpanded, calculateLineChartSummary]);
     const commonBarChartOptions = useMemo(() => ({ indexAxis: isMobileView ? 'x' : 'y', responsive: true, maintainAspectRatio: false, scales: { x: { beginAtZero: true, ticks: { font: { size: isMobileView ? 10 : 12 } } }, y: { ticks: { font: { size: isMobileView ? 10 : 12 } } } }, plugins: { legend: { display: false }, tooltip: { bodyFont: { size: 12 }, titleFont: { size: 12 } } }, barPercentage: 0.5, categoryPercentage: 0.8, maxBarThickness: 30, }), [isMobileView]);
     const lineChartBaseOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, usePointStyle: true, pointStyle: 'line' } }, tooltip: { callbacks: { label: (c) => `${c.dataset.label || ''}: ${c.parsed.y !== null ? c.parsed.y.toLocaleString('pt-BR') : 'N/A'}` } } } }), []);
     const accountsChartOptions = useMemo(() => ({ ...lineChartBaseOptions, scales: { x: { ticks: { font: { size: 11 }, autoSkip: !isAccountsChartExpanded, maxRotation: isAccountsChartExpanded ? (isMobileView ? 60 : 45) : 0, padding: isAccountsChartExpanded ? 5 : 0 } }, y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Contas Ativas', font: { size: 10 } }, ticks: { font: { size: 10 }, callback: v => v == null ? v : v.toLocaleString('pt-BR') } }, y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Limite Médio (R$)', font: { size: 10 } }, grid: { drawOnChartArea: false }, ticks: { font: { size: 10 }, callback: v => v == null ? v : 'R$' + v.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) } } }, plugins: { ...lineChartBaseOptions.plugins, tooltip: { callbacks: { label: (c) => `${c.dataset.label || ''}: ${c.parsed.y !== null ? (c.dataset.yAxisID === 'y1' ? 'R$' + c.parsed.y.toLocaleString('pt-BR', { maximumFractionDigits: 0 }) : c.parsed.y.toLocaleString('pt-BR')) : 'N/A'}` } } } }), [isMobileView, isAccountsChartExpanded, lineChartBaseOptions]);
@@ -143,9 +177,9 @@ function DashboardPage({ user, onLogout }) {
                                  <LineChartMobileSummary
                                      title="Evolução Contas/Limite (Resumo)"
                                      primaryMetricLabel="Contas Ativas"
-                                     primarySummary={accountsChartData.summaryAccounts}
+                                     primarySummary={accountsChartData.summaryAccounts} // Passa o objeto de resumo calculado
                                      secondaryMetricLabel="Limite Médio"
-                                     secondarySummary={accountsChartData.summaryLimit}
+                                     secondarySummary={accountsChartData.summaryLimit} // Passa o objeto de resumo calculado
                                      onExpandClick={(e) => { e.preventDefault(); toggleLineChartExpansion('accounts'); }}
                                      expandButtonText="Ver Gráfico"
                                  />
@@ -160,7 +194,8 @@ function DashboardPage({ user, onLogout }) {
                                   <LineChartMobileSummary
                                       title="Evolução da Esteira (Resumo Total)"
                                       primaryMetricLabel="Esteira Total"
-                                      primarySummary={esteiraChartData.summary}
+                                      primarySummary={esteiraChartData.summary} // Passa o objeto de resumo calculado
+                                      // Não há métrica secundária aqui
                                       onExpandClick={(e) => { e.preventDefault(); toggleLineChartExpansion('esteira'); }}
                                       expandButtonText="Ver Gráfico"
                                   />
