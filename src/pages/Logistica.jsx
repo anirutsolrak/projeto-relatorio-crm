@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import LoadingOverlay from '../components/LoadingOverlay';
-import FilterPanel from '../components/FilterPanel';
-// Não precisamos mais de DataTable
+import PeriodFilter from '../components/PeriodFilter'; // Importa PeriodFilter
 import FileUploaderLogistics from '../components/FileUploaderLogistics';
 import LogisticsService from '../utils/logisticsService';
 import getSupabaseClient from '../utils/supabaseClient';
@@ -9,19 +8,33 @@ import KPIPanel from '../components/KPIPanel';
 import ChartComponent from '../components/ChartComponent';
 import TruncatedTextWithPopover from '../components/TruncatedTextWithPopover';
 
-// Componente de Resumo para mobile (mantido)
-function ChartMobileSummary({ title, valueLabel, value, comparisonLabel, comparisonValue, onExpandClick, expandButtonText }) {
+// Componente Resumo Mobile Ajustado para mostrar todos os itens
+function ChartMobileSummary({ title, data = [], onExpandClick, expandButtonText }) {
     const formatValue = (val) => (val === null || val === undefined || isNaN(Number(val)) ? '-' : Number(val).toLocaleString('pt-BR'));
+
     return (
         <div className="bg-white p-4 rounded-lg shadow-md h-full flex flex-col justify-between">
             <div>
                 <h3 className="text-base font-semibold text-gray-700 mb-4">{title}</h3>
-                <div className="space-y-1 text-sm">
-                    {valueLabel && value !== undefined && (<div className="flex justify-between"><span className="text-gray-500">{valueLabel}:</span><span className="font-medium">{formatValue(value)}</span></div>)}
-                    {comparisonLabel && comparisonValue !== undefined && (<div className="flex justify-between"><span className="text-gray-500">{comparisonLabel}:</span><span className="font-medium">{formatValue(comparisonValue)}</span></div>)}
+                <div className="space-y-1 text-sm max-h-48 overflow-y-auto pr-2">
+                    {data.map((item, index) => (
+                         <div key={index} className="flex justify-between">
+                            <TruncatedTextWithPopover className="text-gray-500 mr-2" title={item.label}>
+                                {item.label}:
+                            </TruncatedTextWithPopover>
+                            <span className="font-medium flex-shrink-0">{formatValue(item.value)}</span>
+                        </div>
+                    ))}
+                    {data.length === 0 && <p className='text-gray-400 text-xs italic'>Nenhum dado para resumir.</p>}
                 </div>
             </div>
-            <div className="mt-4 text-right"><button onClick={onExpandClick} className="btn btn-secondary btn-xs py-1 px-2">{expandButtonText || "Ver Gráfico"}</button></div>
+            {onExpandClick && (
+                 <div className="mt-4 text-right">
+                    <button onClick={onExpandClick} className="btn btn-secondary btn-xs py-1 px-2">
+                        {expandButtonText || "Ver Detalhes"}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -42,17 +55,14 @@ function Logistica({ onNavigate, user }) {
     const reportError = (error, context = 'LogisticaPage') => console.error(`[${context}] Error:`, error?.message || error);
     const logisticsService = useMemo(() => LogisticsService(), []);
 
-    const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-    const [filterOpen, setFilterOpen] = useState(false);
     const [showLogisticsUploader, setShowLogisticsUploader] = useState(false);
-    const [distinctFilterOptions, setDistinctFilterOptions] = useState({ regions: [] }); // Removido statesByRegion
-    // const [availableStates, setAvailableStates] = useState([]); // Remover
+    const [distinctFilterOptions, setDistinctFilterOptions] = useState({ regions: [] });
     const [isLoadingSummary, setIsLoadingSummary] = useState(true);
     const [summaryError, setSummaryError] = useState(null);
     const [summaryData, setSummaryData] = useState({ current: null, previous: null });
+    const [consolidatedPeriodSums, setConsolidatedPeriodSums] = useState(null);
     const [returnReasons, setReturnReasons] = useState([]);
     const [consolidatedTimeSeriesData, setConsolidatedTimeSeriesData] = useState([]);
-    const [filteredTotal, setFilteredTotal] = useState(0);
     const [regionalStateTotals, setRegionalStateTotals] = useState({});
     const [isMobileView, setIsMobileView] = useState(window.innerWidth < 768);
     const [isConsolidatedChartExpanded, setIsConsolidatedChartExpanded] = useState(false);
@@ -64,144 +74,119 @@ function Logistica({ onNavigate, user }) {
 
     const defaultEndDate = new Date().toISOString().split('T')[0];
     const defaultStartDate = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().split('T')[0];
-    // Removido filtro de estado inicial
-    const [filters, setFilters] = useState({ region: 'todos', dataInicio: defaultStartDate, dataFim: defaultEndDate });
+    const [filters, setFilters] = useState({ dataInicio: defaultStartDate, dataFim: defaultEndDate }); // Removido filtro de região daqui
 
-     // Função de busca principal - AGORA BUSCA TODOS OS DADOS NECESSÁRIOS
-     const fetchAllLogisticData = useCallback(async (startDate, endDate, currentFilters) => {
-        console.log(`[fetchAllLogisticData] Iniciando busca para período: ${startDate} a ${endDate} com filtros UI:`, currentFilters);
+     const fetchAllLogisticData = useCallback(async (startDate, endDate) => { // Removido currentFilters
+        console.log(`[fetchAllLogisticData] Iniciando busca para período: ${startDate} a ${endDate}`);
         if (!logisticsService || !startDate || !endDate) { setIsLoadingSummary(false); setSummaryError("Erro interno ou datas inválidas."); return; }
         setIsLoadingSummary(true); setSummaryError(null);
-        // Limpa todos os estados de dados
         setSummaryData({ current: null, previous: null });
+        setConsolidatedPeriodSums(null);
         setReturnReasons([]);
         setConsolidatedTimeSeriesData([]);
-        setFilteredTotal(0);
+        // setFilteredTotal(0); // Removido
         setRegionalStateTotals({});
 
         const { previousStartDate, previousEndDate } = getPreviousPeriod(startDate, endDate);
         console.log(`[fetchAllLogisticData] Período anterior calculado: ${previousStartDate} a ${previousEndDate}`);
 
         try {
-            // Executa todas as buscas em paralelo
             const [
                 currentSummaryResult,
-                previousSummaryResult, // Será { data: null, error: null } se datas inválidas
+                previousSummaryResult,
+                periodSumsResult,
                 reasonsResult,
                 timeSeriesResult,
-                filteredTotalResult,
+                // filteredTotalResult, // Removido
                 regionalStateResult
             ] = await Promise.all([
-                logisticsService.getConsolidatedLogisticsSummary(startDate, endDate), // Ignora filtros UI reg/est
+                logisticsService.getConsolidatedLogisticsSummary(startDate, endDate),
                 (previousStartDate && previousEndDate)
-                    ? logisticsService.getConsolidatedLogisticsSummary(previousStartDate, previousEndDate) // Ignora filtros UI reg/est
+                    ? logisticsService.getConsolidatedLogisticsSummary(previousStartDate, previousEndDate)
                     : Promise.resolve({ data: null, error: null }),
-                logisticsService.getReturnReasonsSummary(startDate, endDate), // Ignora filtros UI reg/est
-                logisticsService.getConsolidatedTimeSeries(startDate, endDate), // Ignora filtros UI reg/est
-                logisticsService.getFilteredTotals(startDate, endDate, currentFilters), // *** USA filtros UI reg ***
-                logisticsService.getRegionalStateTotals(startDate, endDate) // Ignora filtros UI reg/est
+                logisticsService.getConsolidatedPeriodSums(startDate, endDate),
+                logisticsService.getReturnReasonsSummary(startDate, endDate),
+                logisticsService.getConsolidatedTimeSeries(startDate, endDate),
+                // logisticsService.getFilteredTotals(startDate, endDate, filters), // Removido
+                logisticsService.getRegionalStateTotals(startDate, endDate)
             ]);
 
-            console.log(`[fetchAllLogisticData] Resultados:`, { currentSummaryResult, previousSummaryResult, reasonsResult, timeSeriesResult, filteredTotalResult, regionalStateResult });
+            console.log(`[fetchAllLogisticData] Resultados:`, { currentSummaryResult, previousSummaryResult, periodSumsResult, reasonsResult, timeSeriesResult, regionalStateResult }); // Removido filteredTotalResult
 
-            // Coleta erros
              const errors = [];
              if (currentSummaryResult.error) errors.push(`Sumário Atual: ${currentSummaryResult.error.message || 'Erro desconhecido'}`);
              if (previousSummaryResult.error) console.warn(`[fetchAllLogisticData] Erro Sumário Anterior: ${previousSummaryResult.error.message || 'Erro desconhecido'}`);
+             if (periodSumsResult.error) errors.push(`Somas Período: ${periodSumsResult.error.message || 'Erro desconhecido'}`);
              if (reasonsResult.error) errors.push(`Motivos Devolução: ${reasonsResult.error.message || 'Erro desconhecido'}`);
              if (timeSeriesResult.error) errors.push(`Série Temporal: ${timeSeriesResult.error.message || 'Erro desconhecido'}`);
-             if (filteredTotalResult.error) errors.push(`Total Filtrado: ${filteredTotalResult.error.message || 'Erro desconhecido'}`);
-             if (regionalStateResult.error) errors.push(`Totais Regionais/Estaduais: ${regionalStateResult.error.message || 'Erro desconhecido'}`);
+             // if (filteredTotalResult.error) errors.push(`Total Filtrado: ${filteredTotalResult.error.message || 'Erro desconhecido'}`); // Removido
+             if (regionalStateResult.error) errors.push(`Totais Regionais: ${regionalStateResult.error.message || 'Erro desconhecido'}`);
 
              if (errors.length > 0) {
                  throw new Error(errors.join('; '));
              }
 
-             // Define os estados
-             const finalSummaryState = {
-                 current: currentSummaryResult.data,
-                 previous: previousSummaryResult.data
-             };
+             const finalSummaryState = { current: currentSummaryResult.data, previous: previousSummaryResult.data };
              console.log(`[fetchAllLogisticData] Definindo estado summaryData:`, JSON.stringify(finalSummaryState));
              setSummaryData(finalSummaryState);
+             console.log(`[fetchAllLogisticData] Definindo estado consolidatedPeriodSums:`, periodSumsResult.data);
+             setConsolidatedPeriodSums(periodSumsResult.data);
              setReturnReasons(reasonsResult.data || []);
              setConsolidatedTimeSeriesData(timeSeriesResult.data || []);
-             setFilteredTotal(filteredTotalResult.data?.totalSum || 0);
+             // setFilteredTotal(filteredTotalResult.data?.totalSum || 0); // Removido
              setRegionalStateTotals(regionalStateResult.data || {});
 
         } catch (err) {
             reportError(err, 'fetchAllLogisticData');
             setSummaryError(`Falha ao carregar dados: ${err.message}`);
-            // Limpa todos os estados em caso de erro
             setSummaryData({ current: null, previous: null });
+            setConsolidatedPeriodSums(null);
             setReturnReasons([]);
             setConsolidatedTimeSeriesData([]);
-            setFilteredTotal(0);
+            // setFilteredTotal(0); // Removido
             setRegionalStateTotals({});
         } finally {
             setIsLoadingSummary(false);
             console.log(`[fetchAllLogisticData] Busca finalizada.`);
         }
-    }, [logisticsService]); // Apenas service como dependencia, filtros são passados
+    }, [logisticsService]); // Depende apenas do service
 
-    // Busca opções de filtro (apenas regiões agora)
-    const fetchFilterOptions = useCallback(async () => {
-        if (!logisticsService) return;
-         try {
-             const { data, error } = await logisticsService.getDistinctRegionsAndStates(); if (error) throw error;
-             // Ajustado para usar apenas regions
-             setDistinctFilterOptions({ regions: data?.regions || [] });
-         } catch (err) { reportError(err, 'fetchFilterOptions'); setDistinctFilterOptions({ regions: [] }); }
-     }, [logisticsService]);
+    // Remover fetchFilterOptions
+    // useEffect(() => { fetchFilterOptions().catch(err => reportError(err, "useEffectMount[fetchFilterOptions]")); }, [fetchFilterOptions]);
 
-    // Efeitos
-    useEffect(() => { fetchFilterOptions().catch(err => reportError(err, "useEffectMount[fetchFilterOptions]")); }, [fetchFilterOptions]);
     useEffect(() => {
-        console.log("[Logistica useEffect Update] Filtros alterados. Buscando todos os dados...", { filters });
-        fetchAllLogisticData(filters.dataInicio, filters.dataFim, filters).catch(err => reportError(err, "useEffectUpdate[fetchAllLogisticData]"));
-     }, [filters, fetchAllLogisticData]); // Depende de filters e da função principal de busca
-    // Remover useEffect que atualizava availableStates
+        console.log("[Logistica useEffect Update] Filtros de data alterados. Buscando todos os dados...", filters);
+        fetchAllLogisticData(filters.dataInicio, filters.dataFim).catch(err => reportError(err, "useEffectUpdate[fetchAllLogisticData]"));
+     }, [filters.dataInicio, filters.dataFim, fetchAllLogisticData]); // Depende apenas das datas e da função
+
     useEffect(() => { const handleResize = () => setIsMobileView(window.innerWidth < 768); window.addEventListener('resize', handleResize); handleResize(); return () => window.removeEventListener('resize', handleResize); }, []);
     useEffect(() => {
-        const checkOverflow = (container) => {
-            if(container) {
-                const tolerance = 5;
-                return container.scrollWidth > container.clientWidth + tolerance;
-            } return false;
-        }
+        const checkOverflow = (container) => container ? container.scrollWidth > container.clientWidth + 5 : false;
         const consContainer = consolidatedChartScrollContainerRef.current;
         const reasonsContainer = reasonsChartScrollContainerRef.current;
-        const handleResize = () => {
-            checkOverflow(consContainer); // Re-checar no resize
-            checkOverflow(reasonsContainer);
-        }
-        window.addEventListener('resize', handleResize);
-        // Checa inicialmente também
-        checkOverflow(consContainer);
-        checkOverflow(reasonsContainer);
+        const handleResize = () => { checkOverflow(consContainer); checkOverflow(reasonsContainer); }
+        window.addEventListener('resize', handleResize); checkOverflow(consContainer); checkOverflow(reasonsContainer);
         return () => window.removeEventListener('resize', handleResize);
     }, [isConsolidatedChartExpanded, isReasonsChartExpanded, consolidatedTimeSeriesData, returnReasons]);
 
+    // Callback para PeriodFilter
+    const handlePeriodChange = useCallback((newPeriod) => {
+        console.log("[handlePeriodChange] Novas datas recebidas:", newPeriod);
+        if (!newPeriod.startDate || !newPeriod.endDate) {
+            console.error("Período inválido recebido:", newPeriod);
+            setSummaryError("Datas inválidas selecionadas.");
+            return;
+        }
+        if (new Date(newPeriod.endDate) < new Date(newPeriod.startDate)) {
+             console.warn("Data final anterior à inicial.");
+             setSummaryError("Data final não pode ser anterior à data inicial.");
+             return;
+         }
+        setSummaryError(null);
+        setFilters({ dataInicio: newPeriod.startDate, dataFim: newPeriod.endDate }); // Atualiza apenas as datas
+    }, []);
 
-    // Handlers
-    const handleFilterChange = (key, value) => {
-        setFilters(prevFilters => {
-            const newFilters = { ...prevFilters, [key]: value };
-            // Não precisa mais resetar ou atualizar 'state'
-            // Validação de datas
-            if ((key === 'dataInicio' && value && newFilters.dataFim && new Date(value) > new Date(newFilters.dataFim)) ||
-                (key === 'dataFim' && value && newFilters.dataInicio && new Date(value) < new Date(newFilters.dataInicio)))
-            {
-                console.warn("Data final anterior à inicial.");
-                setSummaryError("Data final não pode ser anterior à data inicial.");
-                return prevFilters;
-            } else {
-                setSummaryError(null);
-            }
-            return newFilters;
-        });
-    };
-    const handleFilterToggle = () => setFilterOpen(prev => !prev);
+    // Remover handleFilterToggle
     const handleLogisticsUploadSuccess = async (processedData) => {
         setIsLoadingSummary(true); setSummaryError(null); setShowLogisticsUploader(false);
         const { consolidatedMetrics, logisticsMetrics } = processedData;
@@ -214,15 +199,14 @@ function Logistica({ onNavigate, user }) {
             const errors = results.map((r, i) => r.error ? `Upsert ${i === 0 && consolidatedMetrics?.length > 0 ? 'Consolidado' : 'Estado/Região'}: ${r.error.message}` : null).filter(Boolean);
             if (errors.length > 0) throw new Error(errors.join('; '));
              console.log("[handleLogisticsUploadSuccess] Upload para Supabase concluído. Rebuscando dados...");
-            await fetchAllLogisticData(filters.dataInicio, filters.dataFim, filters); // Passa filtros
-            await fetchFilterOptions();
+            await fetchAllLogisticData(filters.dataInicio, filters.dataFim); // Não passa mais filtros
+            // await fetchFilterOptions(); // Remover
         } catch(err) {
              reportError(err, 'handleLogisticsUploadSuccess-Catch');
              setSummaryError(`Erro durante upload/refresh: ${err.message}`);
              setIsLoadingSummary(false);
          }
      };
-
 
     const formatDate = (dateString) => { if (!dateString) return ''; try { const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch (e) { return dateString; } };
     const formatNumber = (value, decimals = 0) => { if (value === null || value === undefined || isNaN(Number(value))) return '-'; const num = Number(value); return num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
@@ -231,34 +215,86 @@ function Logistica({ onNavigate, user }) {
     const renderComparisonPercentage = useCallback((currentValue, previousValue) => {
         const current = Number(currentValue);
         const previous = Number(previousValue);
-        if (isNaN(current) || previous === null || previous === undefined || isNaN(previous)) return React.createElement('span', { className: "text-gray-500 text-xs" }, "-");
+        if (isNaN(current)) return React.createElement('span', { className: "text-gray-500 text-xs" }, "-");
+        if (previous === null || previous === undefined || isNaN(previous)) { return null; }
         let percentageChange; let iconClass = 'fa-solid fa-equals'; let textClass = 'text-gray-500'; let changeText = '0.0%';
         if (previous === 0) { percentageChange = (current === 0) ? 0 : Infinity; }
         else { percentageChange = ((current - previous) / Math.abs(previous)) * 100; }
-        if (percentageChange === Infinity) { iconClass = 'fa-solid fa-arrow-up'; textClass = 'text-green-600'; changeText = '(>1000%)'; }
+        if (percentageChange === Infinity) { iconClass = 'fa-solid fa-arrow-up'; textClass = 'text-green-600'; changeText = 'Novo'; }
         else if (percentageChange > 0.05) { iconClass = 'fa-solid fa-arrow-up'; textClass = 'text-green-600'; changeText = `+${percentageChange.toFixed(1)}%`; }
         else if (percentageChange < -0.05) { iconClass = 'fa-solid fa-arrow-down'; textClass = 'text-red-600'; changeText = `${percentageChange.toFixed(1)}%`; }
         return React.createElement('span', { className: `text-xs ${textClass} inline-flex items-center gap-1 whitespace-nowrap` }, React.createElement('i', { className: iconClass }), React.createElement('span', null, changeText), React.createElement('span', {className:"text-gray-400"}, "(vs ant.)"));
     }, []);
 
-    const renderComparisonWithCurrentPercent = useCallback((currentValue, previousValue, currentTotal) => {
+    const renderCompleteComparison = useCallback((currentValue, previousValue, periodSumValue, currentTotal) => {
         const currentValNum = Number(currentValue);
         const currentTotalNum = Number(currentTotal);
         const percentageOfTotal = currentTotalNum > 0 && !isNaN(currentValNum) ? (currentValNum / currentTotalNum * 100) : 0;
         const popComparison = renderComparisonPercentage(currentValue, previousValue);
-        return React.createElement('div', { className: 'flex flex-col sm:flex-row sm:items-center sm:gap-x-2' },
-            React.createElement('span', { className: 'text-xs text-gray-600' }, `(${formatPercent(percentageOfTotal)})`),
-            React.createElement('span', { className: 'text-xs text-gray-400 mx-1 hidden sm:inline' }, '|'),
-            popComparison
-        );
-    }, [renderComparisonPercentage, formatPercent]);
+        const hasPeriodSum = periodSumValue !== null && periodSumValue !== undefined && !isNaN(Number(periodSumValue));
+        const hasPercentage = !isNaN(percentageOfTotal);
 
-    // --- Dados e Opções dos Gráficos (com ajustes para scroll e cores) ---
-    const consolidatedChartData = useMemo(() => { if (!consolidatedTimeSeriesData || consolidatedTimeSeriesData.length === 0) return { labels: [], datasets: [] }; const labels = [...new Set(consolidatedTimeSeriesData.map(d => d.metric_date))].sort(); const formattedLabels = labels.map(l => formatDate(l)); const categories = ['Entregue', 'Em Rota', 'DEVOLUÇÃO', 'Custodia']; const colors = { 'Entregue': '#10b981', 'Em Rota': '#3b82f6', 'DEVOLUÇÃO': '#ef4444', 'Custodia': '#f59e0b' }; const datasets = categories.map(cat => { const dataPoints = labels.map(label => { const point = consolidatedTimeSeriesData.find(d => d.metric_date === label && (d.sub_category === cat || (cat === 'DEVOLUÇÃO' && ['DEVOLUCAO', 'DEVOLUÇÃO', 'DEVOLUÃ‡ÃƒO'].includes(d.sub_category))) ); return point ? point.value : null; }); return { label: cat, data: dataPoints, borderColor: colors[cat], backgroundColor: `${colors[cat]}33`, tension: 0.1, yAxisID: 'y', fill: false, pointRadius: labels.length > 30 ? (isConsolidatedChartExpanded ? 1: 0) : 3, pointHoverRadius: 5, spanGaps: true, }; }); return { labels: formattedLabels, datasets }; }, [consolidatedTimeSeriesData, isConsolidatedChartExpanded]);
+        if (!popComparison && !hasPercentage) return null; // Não renderiza nada se não houver nem % nem PoP
+
+        return React.createElement('div', { className: 'mt-1 flex flex-col' },
+            !isMobileView && hasPeriodSum && React.createElement('span', { className: 'text-xs text-gray-500 mb-0.5' }, `(${formatNumber(periodSumValue)} período)`),
+            React.createElement('div', { className: 'flex flex-wrap items-center gap-x-2' },
+                 hasPercentage && React.createElement('span', { className: 'text-xs text-gray-600' }, `(${formatPercent(percentageOfTotal)})`),
+                 hasPercentage && popComparison && React.createElement('span', { className: 'text-xs text-gray-400' }, '|'),
+                 popComparison
+            )
+        );
+    }, [isMobileView, renderComparisonPercentage, formatPercent, formatNumber]);
+
+    // --- Dados e Opções dos Gráficos ---
+    const consolidatedChartData = useMemo(() => {
+        const originalData = consolidatedTimeSeriesData || [];
+        if (originalData.length === 0) return { labels: [], datasets: [] };
+
+        const allLabels = [...new Set(originalData.map(d => d.metric_date))].sort();
+        const categories = ['Entregue', 'Em Rota', 'DEVOLUÇÃO', 'Custodia'];
+        const colors = { 'Entregue': '#10b981', 'Em Rota': '#3b82f6', 'DEVOLUÇÃO': '#ef4444', 'Custodia': '#f59e0b' };
+
+        // Determina quais labels e dados mostrar
+        let labelsToShow = allLabels;
+        if (!isMobileView && !isConsolidatedChartExpanded && allLabels.length > 3) {
+            labelsToShow = allLabels.slice(-3); // Pega os últimos 3
+        }
+        const formattedLabelsToShow = labelsToShow.map(l => formatDate(l));
+
+        const datasets = categories.map(cat => {
+            const fullDataPoints = allLabels.map(label => {
+                const point = originalData.find(d => d.metric_date === label && (d.sub_category === cat || (cat === 'DEVOLUÇÃO' && ['DEVOLUCAO', 'DEVOLUÇÃO', 'DEVOLUÃ‡ÃƒO'].includes(d.sub_category))));
+                return point ? point.value : null;
+            });
+
+            // Filtra os dataPoints para corresponder aos labelsToShow
+            let dataPointsToShow = fullDataPoints;
+            if (!isMobileView && !isConsolidatedChartExpanded && allLabels.length > 3) {
+                 dataPointsToShow = fullDataPoints.slice(-3);
+            }
+
+            // Lógica de raio baseada na densidade ORIGINAL
+            const pointRadius = allLabels.length > 30 ? (isConsolidatedChartExpanded ? 1 : 0) : 3;
+            const pointHoverRadius = 5;
+
+            return {
+                 label: cat,
+                 data: dataPointsToShow, // Usa os dados fatiados
+                 borderColor: colors[cat],
+                 backgroundColor: `${colors[cat]}33`,
+                 tension: 0.1, yAxisID: 'y', fill: false,
+                 pointRadius: pointRadius, // Raio baseado na densidade original
+                 pointHoverRadius: pointHoverRadius,
+                 spanGaps: true,
+             };
+        });
+        return { labels: formattedLabelsToShow, datasets }; // Retorna labels e datasets fatiados
+     }, [consolidatedTimeSeriesData, isConsolidatedChartExpanded, isMobileView]); // Adiciona isMobileView
 
     const returnReasonsChartData = useMemo(() => {
         if (!returnReasons || returnReasons.length === 0) return { labels: [], datasets: [] };
-        const reasonColors = ['#64748b', '#718096', '#a0aec0', '#cbd5e0', '#e2e8f0', '#f7fafc', '#4a5568', '#2d3748', '#94a3b8', '#e2e8f0'];
+        const reasonColors = ['#3b82f6', '#ef4444', '#f97316', '#eab308', '#10b981', '#14b8a6', '#6366f1', '#a855f7', '#ec4899', '#64748b', '#f43f5e', '#84cc16'];
         const dataToShow = isReasonsChartExpanded ? returnReasons : returnReasons.slice(0, isMobileView ? 5 : 7);
         return {
              labels: dataToShow.map(r => r.reason),
@@ -273,43 +309,52 @@ function Logistica({ onNavigate, user }) {
     const lineChartOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { ticks: { autoSkip: !isConsolidatedChartExpanded, maxRotation: (isMobileView || isConsolidatedChartExpanded) ? 60 : 0, font: { size: 10 }, padding: 5 } }, y: { beginAtZero: true, title: { display: true, text: 'Quantidade', font: { size: 11 } }, ticks: { font: { size: 10 }} } }, plugins: { legend: { position: 'bottom', labels: { font: {size: 11}, usePointStyle: true, pointStyleWidth: 8 } } } }), [isMobileView, isConsolidatedChartExpanded]);
 
     const barChartOptions = useMemo(() => ({
-        responsive: true, maintainAspectRatio: false, indexAxis: isMobileView ? 'y' : 'x',
-        scales: {
-            x: { beginAtZero: true, ticks: { font: { size: 10 }}},
-            y: { ticks: { autoSkip: false, font: { size: 10 } } } // Removido callback por enquanto, TruncatedText cuidará disso
-        },
-        plugins: {
-             legend: { display: false },
-             tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatNumber(ctx.raw)}` } }
-         } }),
-     [isMobileView]); // Removido isReasonsChartExpanded como dependencia
+        responsive: true, maintainAspectRatio: false, indexAxis: 'y',
+        scales: { x: { beginAtZero: true, ticks: { font: { size: 10 }}}, y: { ticks: { autoSkip: false, font: { size: 10 } } } },
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${formatNumber(ctx.raw)}` } } }
+     }), []);
 
-    const calculateBarChartHeight = (itemCount) => Math.max(300, itemCount * (isMobileView ? 30 : 25) + 100);
-    const reasonsChartHeight = isReasonsChartExpanded ? calculateBarChartHeight(returnReasons.length) : (isMobileView ? 300 : 400);
-    const consolidatedChartMinWidth = isConsolidatedChartExpanded ? `${Math.max(600, (consolidatedChartData?.labels?.length || 0) * (isMobileView ? 35 : 50))}px` : '100%'; // Usa consolidatedChartData.labels
+    const calculateBarChartHeight = (itemCount) => Math.max(300, itemCount * 28 + 100);
+    const reasonsChartHeight = isReasonsChartExpanded ? calculateBarChartHeight(returnReasons.length) : 400;
+    // Ajuste na lógica de minWidth para gráfico de tendência
+    const consolidatedChartMinWidth = (!isMobileView && !isConsolidatedChartExpanded) ? '100%' : `${Math.max(600, (consolidatedTimeSeriesData?.length || 0) * (isMobileView ? 35 : 50))}px`;
 
 
     const toggleConsolidatedChartExpansion = () => setIsConsolidatedChartExpanded(prev => !prev);
     const toggleReasonsChartExpansion = () => setIsReasonsChartExpanded(prev => !prev);
     const toggleRegionExpansion = (region) => setExpandedRegion(prev => prev === region ? null : region);
 
-
-    const renderFilters = () => ( <> {renderMobileFilters()} {renderDesktopFilters()} </> );
-    const renderDesktopFilters = () => ( <div className="hidden lg:block mb-6"> <div className="bg-white p-4 rounded-lg shadow-sm"> <div className="grid grid-cols-1 md:grid-cols-3 gap-4"> {/* Ajustado para 3 colunas */} <div> <label className="input-label" htmlFor="filter-region-desktop">Região</label> <select id="filter-region-desktop" value={filters.region} onChange={(e) => handleFilterChange('region', e.target.value)} className="input-field" data-name="region-filter-select" > <option value="todos">Todas</option> {(distinctFilterOptions.regions || []).map(r => <option key={r} value={r}>{r}</option>)} </select> </div> {/* Filtro de Estado Removido */} <div> <label className="input-label" htmlFor="filter-start-date-desktop">Data Início</label> <input id="filter-start-date-desktop" type="date" value={filters.dataInicio} onChange={(e) => handleFilterChange('dataInicio', e.target.value)} className="input-field" data-name="start-date-input" max={filters.dataFim || undefined}/> </div> <div> <label className="input-label" htmlFor="filter-end-date-desktop">Data Fim</label> <input id="filter-end-date-desktop" type="date" value={filters.dataFim} onChange={(e) => handleFilterChange('dataFim', e.target.value)} className="input-field" data-name="end-date-input" min={filters.dataInicio || undefined} /> </div> </div> </div> </div> );
-    const renderMobileFilters = () => ( <div className={`lg:hidden mb-6 ${filterOpen ? 'block' : 'hidden'}`}> <FilterPanel filters={[ { id: 'region', label: 'Região', type: 'select', value: filters.region, options: [{ value: 'todos', label: 'Todas' }, ...(distinctFilterOptions.regions || []).map(r => ({ value: r, label: r }))] }, /* Filtro de Estado Removido */ { id: 'dataInicio', label: 'Data Início', type: 'date', value: filters.dataInicio, max: filters.dataFim || undefined }, { id: 'dataFim', label: 'Data Fim', type: 'date', value: filters.dataFim, min: filters.dataInicio || undefined } ]} onFilterChange={handleFilterChange} isOpen={filterOpen} /> </div> );
+    // --- Renderização Auxiliar ---
+    // Remover renderFilters
     const renderNoDataMessage = (message) => ( <div className="flex items-center justify-center h-full text-center py-12 text-gray-500"> <div><i className="fas fa-info-circle text-4xl mb-4"></i> <p>{message}</p></div> </div> );
     const renderLoading = (message) => ( <div className="flex items-center justify-center h-full text-center py-12 text-gray-500"> <div><i className="fas fa-spinner fa-spin text-4xl mb-4"></i> <p>{message}</p></div> </div> );
 
     const canUpload = user && user.role !== 'guest';
     const currentSummary = summaryData?.current;
     const previousSummary = summaryData?.previous;
+    const periodSums = consolidatedPeriodSums;
     const hasCurrentSummary = !!currentSummary && !isLoadingSummary && !summaryError;
     const totalGeralCurrent = hasCurrentSummary ? currentSummary.geral || 0 : 0;
     const totalGeralPrevious = previousSummary ? previousSummary.geral : null;
 
-    let filteredTotalTitle = "Total ARs (Filtro Região)"; // Título base
-    if (filters.region !== 'todos') filteredTotalTitle = `Total ${filters.region}`;
+    // Remover filteredTotalTitle
+    const trendMobileSummaryData = useMemo(() => {
+        if (!periodSums) return [];
+        return [
+            { label: 'Entregue (Soma Per.)', value: periodSums.delivered },
+            { label: 'Devolvido (Soma Per.)', value: periodSums.returned },
+            { label: 'Em Rota (Soma Per.)', value: periodSums.inRoute },
+            { label: 'Custódia (Soma Per.)', value: periodSums.custody },
+        ].filter(item => item.value !== null && item.value !== undefined);
+    }, [periodSums]);
 
+    const reasonsMobileSummaryData = useMemo(() => {
+         if (!returnReasons || returnReasons.length === 0) return [];
+         return returnReasons.map(r => ({ label: r.reason, value: r.count }));
+     }, [returnReasons]);
+
+     const initialReasonsLimit = isMobileView ? 5 : 7;
+     const showReasonsExpandButton = returnReasons.length > initialReasonsLimit; // Botão só aparece se houver mais itens que o limite inicial
 
     return (
         <div className="min-h-screen">
@@ -319,51 +364,52 @@ function Logistica({ onNavigate, user }) {
                 <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center mb-6">
                     <h2 className="text-2xl font-bold text-gray-800 mb-4 lg:mb-0">Relatórios de Logística</h2>
                     <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 w-full sm:w-auto">
-                        <button onClick={handleFilterToggle} className="btn btn-secondary btn-icon lg:hidden w-full sm:w-auto" data-name="mobile-filter-button"> <i className="fas fa-filter"></i> <span>Filtros</span> </button>
+                        {/* Botão de Filtro Mobile Removido */}
                         {canUpload && ( <button onClick={() => setShowLogisticsUploader(prev => !prev)} className={`btn ${showLogisticsUploader ? 'btn-secondary' : 'btn-primary'} btn-icon w-full sm:w-auto`} data-name="upload-logistics-button"> <i className={`fas ${showLogisticsUploader ? 'fa-times' : 'fa-upload'}`}></i> <span>{showLogisticsUploader ? 'Fechar Upload' : 'Carregar'}</span> </button> )}
                     </div>
                 </div>
                 {showLogisticsUploader && canUpload && ( <div className="my-6"> <FileUploaderLogistics onFileUpload={handleLogisticsUploadSuccess} user={user} onClose={() => setShowLogisticsUploader(false)} /> </div> )}
-                {renderFilters()}
+                 {/* Usando PeriodFilter diretamente */}
+                 <PeriodFilter onPeriodChange={handlePeriodChange} initialPeriod={{ startDate: filters.dataInicio, endDate: filters.dataFim }} />
 
-                {/* --- KPIs Consolidados (Geral) e Total Filtrado por Região --- */}
+                {/* --- KPIs Consolidados (Geral) --- */}
                 {isLoadingSummary && renderLoading("Carregando KPIs...")}
                 {!isLoadingSummary && !summaryError && !currentSummary && renderNoDataMessage("Nenhum dado de sumário encontrado para o período.")}
                 {hasCurrentSummary && (
-                    <div className="kpi-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4 my-6">
-                        <KPIPanel title="Entregue (Geral - Últ. Dia)" value={currentSummary.delivered} comparison={renderComparisonWithCurrentPercent(currentSummary.delivered, previousSummary?.delivered, totalGeralCurrent)}/>
-                        <KPIPanel title="Devolvido (Geral - Últ. Dia)" value={currentSummary.returned} comparison={renderComparisonWithCurrentPercent(currentSummary.returned, previousSummary?.returned, totalGeralCurrent)}/>
-                        <KPIPanel title="Custódia (Geral - Últ. Dia)" value={currentSummary.custody} comparison={renderComparisonWithCurrentPercent(currentSummary.custody, previousSummary?.custody, totalGeralCurrent)} />
-                        <KPIPanel title="Em Rota (Geral - Últ. Dia)" value={currentSummary.inRoute} comparison={renderComparisonWithCurrentPercent(currentSummary.inRoute, previousSummary?.inRoute, totalGeralCurrent)} />
-                        <KPIPanel title="Total Geral (Geral - Últ. Dia)" value={totalGeralCurrent} comparison={renderComparisonPercentage(totalGeralCurrent, totalGeralPrevious)} />
-                        <KPIPanel title={filteredTotalTitle} value={filteredTotal} />
+                    <div className="kpi-grid grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4 my-6"> {/* Volta para 5 colunas */}
+                        <KPIPanel title="Entregue (Geral - Últ. Dia)" value={formatNumber(currentSummary.delivered)} comparison={renderCompleteComparison(currentSummary.delivered, previousSummary?.delivered, periodSums?.delivered, totalGeralCurrent)}/>
+                        <KPIPanel title="Devolvido (Geral - Últ. Dia)" value={formatNumber(currentSummary.returned)} comparison={renderCompleteComparison(currentSummary.returned, previousSummary?.returned, periodSums?.returned, totalGeralCurrent)}/>
+                        <KPIPanel title="Custódia (Geral - Últ. Dia)" value={formatNumber(currentSummary.custody)} comparison={renderCompleteComparison(currentSummary.custody, previousSummary?.custody, periodSums?.custody, totalGeralCurrent)} />
+                        <KPIPanel title="Em Rota (Geral - Últ. Dia)" value={formatNumber(currentSummary.inRoute)} comparison={renderCompleteComparison(currentSummary.inRoute, previousSummary?.inRoute, periodSums?.inRoute, totalGeralCurrent)} />
+                        <KPIPanel title="Total Geral (Geral - Últ. Dia)" value={formatNumber(totalGeralCurrent)} comparison={renderComparisonPercentage(totalGeralCurrent, totalGeralPrevious)} />
+                         {/* KPI Total Filtrado Removido */}
                     </div>
                 )}
 
-                 {/* --- Gráficos (Consolidados - Ignoram filtro de região UI) --- */}
+                 {/* --- Gráficos --- */}
                  {!isLoadingSummary && !summaryError && (consolidatedTimeSeriesData.length > 0 || returnReasons.length > 0) && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                         {/* Gráfico de Tendência */}
-                        <div className="bg-white p-4 rounded-lg shadow-md flex flex-col">
+                        <div className="bg-white p-4 rounded-lg shadow-md flex flex-col min-h-[400px]">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="text-base font-semibold text-gray-700">Tendência Consolidada (Geral)</h3>
-                                {isMobileView && consolidatedTimeSeriesData.length > 0 && (
+                                {consolidatedTimeSeriesData.length > 0 && (
                                     <button onClick={toggleConsolidatedChartExpansion} className="btn btn-secondary btn-xs py-1 px-2">
                                         {isConsolidatedChartExpanded ? 'Ver Resumo' : 'Ver Gráfico'}
                                     </button>
                                 )}
                             </div>
-                             {(isMobileView && !isConsolidatedChartExpanded && hasCurrentSummary) ? (
+                             {(!isConsolidatedChartExpanded && isMobileView && consolidatedTimeSeriesData.length > 0) ? (
                                  <ChartMobileSummary
-                                     title="Resumo Tendência (Geral)"
-                                     valueLabel="Total Geral (Últ. Dia)"
-                                     value={totalGeralCurrent}
+                                     title="Resumo Tendência (Soma Período)"
+                                     data={trendMobileSummaryData}
                                      onExpandClick={toggleConsolidatedChartExpansion}
                                      expandButtonText="Ver Gráfico"
                                  />
                              ) : (
                                 <div className="flex-grow relative h-[350px]">
                                      <div ref={consolidatedChartScrollContainerRef} className={`absolute inset-0 ${isConsolidatedChartExpanded ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
+                                          {/* Aplica minWidth dinâmico */}
                                           <div style={{ minWidth: consolidatedChartMinWidth, height: '100%' }} className="relative">
                                              {consolidatedTimeSeriesData.length > 0 ? <ChartComponent type="line" data={consolidatedChartData} options={lineChartOptions} /> : renderNoDataMessage("Sem dados para gráfico de tendência.")}
                                           </div>
@@ -373,28 +419,27 @@ function Logistica({ onNavigate, user }) {
                         </div>
 
                         {/* Gráfico de Motivos */}
-                        <div className="bg-white p-4 rounded-lg shadow-md flex flex-col">
+                        <div className="bg-white p-4 rounded-lg shadow-md flex flex-col min-h-[400px]">
                              <div className="flex justify-between items-center mb-4">
                                  <h3 className="text-base font-semibold text-gray-700">Motivos de Devolução (Geral - Últ. Dia)</h3>
-                                 {returnReasons.length > (isMobileView ? 5 : 7) && (
+                                 {/* Condição ajustada para o botão */}
+                                 {showReasonsExpandButton && (
                                      <button onClick={toggleReasonsChartExpansion} className="btn btn-secondary btn-xs py-1 px-2">
-                                         {isReasonsChartExpanded ? 'Ver Menos' : `Ver Top ${returnReasons.length}`}
+                                         {isReasonsChartExpanded ? (isMobileView ? 'Ver Resumo' : 'Ver Menos') : `Ver ${isMobileView ? 'Gráfico' : `Todos (${returnReasons.length})`}`}
                                      </button>
                                  )}
                              </div>
-                              {(isMobileView && !isReasonsChartExpanded && returnReasons.length > 0) ? (
+                              {(!isReasonsChartExpanded && isMobileView && returnReasons.length > 0) ? (
                                   <ChartMobileSummary
-                                      title="Resumo Motivos Devolução (Geral)"
-                                      valueLabel={returnReasons[0]?.reason}
-                                      value={returnReasons[0]?.count}
-                                      comparisonLabel={returnReasons[1]?.reason}
-                                      comparisonValue={returnReasons[1]?.count}
+                                      title="Resumo Motivos Devolução (Últ. Dia)"
+                                      data={reasonsMobileSummaryData}
                                       onExpandClick={toggleReasonsChartExpansion}
                                       expandButtonText="Ver Gráfico"
                                   />
                               ) : (
                                  <div className="flex-grow relative" style={{ height: `${reasonsChartHeight}px` }}>
                                       <div ref={reasonsChartScrollContainerRef} className={`absolute inset-0 ${isReasonsChartExpanded ? 'overflow-auto' : 'overflow-hidden'}`}>
+                                            {/* Aplica height dinâmico */}
                                           <div style={{ height: isReasonsChartExpanded ? `${calculateBarChartHeight(returnReasonsChartData.labels.length)}px` : '100%', width:'100%' }}>
                                               {returnReasons.length > 0 ? (
                                                   <ChartComponent type="bar" data={returnReasonsChartData} options={barChartOptions} />
@@ -407,7 +452,7 @@ function Logistica({ onNavigate, user }) {
                     </div>
                  )}
 
-                 {/* --- KPIs Regionais/Estaduais (Período Selecionado - IGNORA filtro de região UI) --- */}
+                 {/* --- KPIs Regionais/Estaduais --- */}
                  {!isLoadingSummary && !summaryError && Object.keys(regionalStateTotals).length > 0 && (
                      <div className="mb-6">
                          <h3 className="text-xl font-semibold text-gray-800 mb-4">Totais por Região (Período Selecionado)</h3>
@@ -423,7 +468,7 @@ function Logistica({ onNavigate, user }) {
                                              role="button"
                                              tabIndex={0}
                                              aria-expanded={expandedRegion === region}
-                                             aria-controls={`states-${region}`} // Accessibility
+                                             aria-controls={`states-${region}`}
                                          >
                                              <h4 className="text-base font-semibold text-gray-700">{region}</h4>
                                              <div className='flex items-center'>
@@ -431,19 +476,20 @@ function Logistica({ onNavigate, user }) {
                                                 <i className={`fas fa-chevron-down transition-transform duration-200 ${expandedRegion === region ? 'rotate-180' : ''}`}></i>
                                              </div>
                                          </div>
-                                         {/* Detalhes dos estados */}
                                          <div
                                             id={`states-${region}`}
                                             className={`transition-all duration-300 ease-in-out overflow-hidden ${expandedRegion === region ? 'max-h-60 mt-3 pt-3 border-t border-gray-200' : 'max-h-0'}`}
-                                            style={{ maxHeight: expandedRegion === region ? '15rem' : '0' }} // Tailwind JIT might need explicit max-height
+                                            style={{ maxHeight: expandedRegion === region ? '15rem' : '0' }}
                                          >
-                                            <div className="space-y-1 pl-2 overflow-y-auto max-h-56"> {/* Max height for scroll */}
+                                            <div className="space-y-1 pl-2 overflow-y-auto max-h-56">
                                                  {Object.entries(regionData.states)
                                                      .sort(([, a], [, b]) => b - a)
                                                      .map(([state, count]) => (
                                                          <div key={state} className="flex justify-between items-center text-sm pr-2">
-                                                             <span className="text-gray-600">{state}</span>
-                                                             <span className="font-medium">{formatNumber(count)}</span>
+                                                             <TruncatedTextWithPopover className="text-gray-600" title={state}>
+                                                                 {state}
+                                                             </TruncatedTextWithPopover>
+                                                             <span className="font-medium flex-shrink-0 ml-2">{formatNumber(count)}</span>
                                                          </div>
                                                  ))}
                                                  {Object.keys(regionData.states).length === 0 && <p className="text-sm text-gray-500 italic">Nenhum estado encontrado.</p>}
