@@ -15,9 +15,10 @@ function LogisticsService() {
         }
     };
 
+    // Não é mais usada pela página Logistica.js, mas mantida caso útil em outro lugar.
     async function getLogisticsData(startDate, endDate, filters = {}) {
         const context = 'getLogisticsData';
-        console.log(`[${context}] Fetching table data for ${startDate} to ${endDate} with filters:`, filters);
+        console.log(`[${context}] Fetching detailed data for ${startDate} to ${endDate} with filters:`, filters);
         const supabase = getClient();
         try {
             let query = supabase
@@ -29,9 +30,10 @@ function LogisticsService() {
             if (filters.region && filters.region !== 'todos') {
                 query = query.eq('region', filters.region);
             }
-            if (filters.state && filters.state !== 'todos') {
-                query = query.eq('state', filters.state);
-            }
+            // Filtro de estado removido da lógica principal da página
+            // if (filters.state && filters.state !== 'todos') {
+            //      query = query.eq('state', filters.state);
+            // }
 
             const { data, error, count } = await query;
 
@@ -44,73 +46,51 @@ function LogisticsService() {
         }
     }
 
+    // Busca regiões e estados distintos para os filtros da UI
     async function getDistinctRegionsAndStates() {
         const context = 'getDistinctRegionsAndStates';
         console.log(`[${context}] Fetching distinct regions and states.`);
         const supabase = getClient();
         try {
-
+            // Otimização: buscar apenas regiões distintas, já que o filtro de estado foi removido
             const { data, error } = await supabase
                 .from('logistics_daily_metrics')
-                .select('region, state');
+                .select('region'); // Seleciona apenas a coluna region
 
             if (error) throw error;
-            console.log(`[${context}] Found ${data?.length ?? 0} region/state combinations.`);
+            console.log(`[${context}] Found ${data?.length ?? 0} region entries.`);
 
             const regions = new Set();
-            const statesByRegion = {};
-
             if (data) {
                  data.forEach(item => {
                     if (item.region) {
                          regions.add(item.region);
-                         if (item.state) {
-                             if (!statesByRegion[item.region]) {
-                                 statesByRegion[item.region] = new Set();
-                             }
-                             statesByRegion[item.region].add(item.state);
-                         }
                      }
                  });
              }
 
              const sortedRegions = Array.from(regions).sort();
-             const finalStatesByRegion = {};
-             for (const region in statesByRegion) {
-                 finalStatesByRegion[region] = Array.from(statesByRegion[region]).sort();
-             }
-             console.log(`[${context}] Result:`, { regions: sortedRegions, statesByRegion: finalStatesByRegion });
-            return { data: { regions: sortedRegions, statesByRegion: finalStatesByRegion }, error: null };
+             // Não precisamos mais de statesByRegion
+             console.log(`[${context}] Result:`, { regions: sortedRegions });
+            return { data: { regions: sortedRegions, statesByRegion: {} }, error: null }; // Retorna statesByRegion vazio
         } catch (error) {
             reportServiceError(error, context);
             return { data: { regions: [], statesByRegion: {} }, error };
         }
     }
 
+    // --- Busca dados consolidados (KPIs) - IGNORA filtros de UI de Região ---
     async function getConsolidatedLogisticsSummary(startDate, endDate) {
         const context = 'getConsolidatedLogisticsSummary';
         console.log(`[${context}] Fetching summary data for period: ${startDate} to ${endDate}`);
         const supabase = getClient();
 
-        // *** VERIFIQUE E AJUSTE ESTES NOMES CONFORME O BANCO ***
-        const targetCategoryName = 'ENTREGAS'; // É este mesmo? Ou "ENTREGAS - Projeção"?
-        const subCategoryMap = {
-            delivered: 'Entregue',      // Está escrito assim?
-            inRoute:   'Em Rota',       // Está escrito assim?
-            returned:  'DEVOLUÇÃO',     // Ou 'DEVOLUCAO' ou 'DEVOLUÃ‡ÃƒO'?
-            custody:   'Custodia'       // Está escrito assim?
-        };
-        // *** FIM DA VERIFICAÇÃO ***
+        const targetCategoryName = 'ENTREGAS';
+        const subCategoryMap = { delivered: 'Entregue', inRoute: 'Em Rota', returned: 'DEVOLUÇÃO', custody: 'Custodia' };
+        const variationsReturned = [...new Set([subCategoryMap.returned, 'DEVOLUCAO', 'DEVOLUÇÃO', 'DEVOLUÃ‡ÃƒO'])];
+        const targetSubCategories = [ subCategoryMap.delivered, subCategoryMap.inRoute, ...variationsReturned, subCategoryMap.custody ].filter(Boolean);
 
-        const variationsReturned = [...new Set([subCategoryMap.returned, 'DEVOLUCAO', 'DEVOLUÇÃO', 'DEVOLUÃ‡ÃƒO'])]; // Garante unicidade e inclui comuns
-        const targetSubCategories = [
-            subCategoryMap.delivered,
-            subCategoryMap.inRoute,
-            ...variationsReturned,
-            subCategoryMap.custody
-        ].filter(Boolean); // Remove null/undefined se algum nome não for encontrado
-
-        console.log(`[${context}] Querying table 'logistics_consolidated_metrics' for category '${targetCategoryName}' and subcategories:`, targetSubCategories);
+        console.log(`[${context}] Querying 'logistics_consolidated_metrics' for category '${targetCategoryName}' and subcategories:`, targetSubCategories);
 
         try {
             const { data, error } = await supabase
@@ -126,12 +106,9 @@ function LogisticsService() {
                  console.error(`[${context}] Supabase error fetching data:`, error);
                  throw error;
              }
-            console.log(`[${context}] Raw data fetched from DB (${data?.length ?? 0} rows for category '${targetCategoryName}' in period):`, data?.length > 5 ? JSON.stringify(data.slice(-5))+' (last 5 shown)' : JSON.stringify(data));
+            console.log(`[${context}] Raw data fetched (${data?.length ?? 0} rows for category '${targetCategoryName}' in period):`, data?.length > 5 ? JSON.stringify(data.slice(-5))+' (last 5 shown)' : JSON.stringify(data));
 
-            const summary = {
-                delivered: 0, inRoute: 0, returned: 0, custody: 0, geral: 0,
-                successRate: 0, returnRate: 0, lastDateFound: null
-            };
+            const summary = { delivered: 0, inRoute: 0, returned: 0, custody: 0, geral: 0, successRate: 0, returnRate: 0, lastDateFound: null };
 
             if (data && data.length > 0) {
                 const latestDate = data[data.length - 1].metric_date;
@@ -171,24 +148,20 @@ function LogisticsService() {
         }
     }
 
-
+    // --- Busca motivos de devolução (IGNORA filtros de UI de Região) ---
     async function getReturnReasonsSummary(startDate, endDate) {
         const context = 'getReturnReasonsSummary';
-         // *** VERIFIQUE E AJUSTE ESTE NOME CONFORME O BANCO ***
-        const targetCategoryName = 'DEVOLUÇÃO - MOTIVOS'; // Ou 'DEVOLUCAO - MOTIVOS' ou 'DEVOLUÃ‡ÃƒO - MOTIVOS'?
-        // *** FIM DA VERIFICAÇÃO ***
-
+        const targetCategoryName = 'DEVOLUÇÃO - MOTIVOS';
         console.log(`[${context}] Fetching return reasons for period: ${startDate} to ${endDate}, Category: '${targetCategoryName}'`);
         const supabase = getClient();
 
         try {
-            console.log(`[${context}] Executing query...`);
             const { data, error } = await supabase
                 .from('logistics_consolidated_metrics')
                 .select('metric_date, sub_category, value')
                 .gte('metric_date', startDate)
                 .lte('metric_date', endDate)
-                .eq('category', targetCategoryName) // Usa nome verificado/ajustado
+                .eq('category', targetCategoryName)
                 .order('metric_date', { ascending: false });
 
             if (error) {
@@ -208,14 +181,9 @@ function LogisticsService() {
                  console.log(`[${context}] Data for latest date (${latestData.length} items):`, JSON.stringify(latestData));
 
                  latestData.forEach(item => {
-                     // Verifica se sub_category existe e não é igual à categoria principal (case-insensitive)
-                     // E também não é exatamente igual à categoria principal (para evitar linhas de total)
                      if (item.sub_category && item.sub_category.toUpperCase() !== targetCategoryName.toUpperCase() && item.sub_category !== targetCategoryName) {
                          const value = typeof item.value === 'number' && !isNaN(item.value) ? item.value : 0;
                          reasons[item.sub_category] = value;
-
-                     } else {
-
                      }
                  });
             } else {
@@ -238,17 +206,13 @@ function LogisticsService() {
         }
     }
 
-
+    // --- Busca série temporal consolidada (IGNORA filtros de UI de Região) ---
     async function getConsolidatedTimeSeries(startDate, endDate) {
         const context = 'getConsolidatedTimeSeries';
-         // *** VERIFIQUE E AJUSTE ESTES NOMES CONFORME O BANCO ***
         const targetCategoryName = 'ENTREGAS';
         const subCategoryMap = { delivered: 'Entregue', inRoute: 'Em Rota', returned: 'DEVOLUÇÃO', custody: 'Custodia' };
-        // *** FIM DA VERIFICAÇÃO ***
-
         const variationsReturned = [...new Set([subCategoryMap.returned, 'DEVOLUCAO', 'DEVOLUÇÃO', 'DEVOLUÃ‡ÃƒO'])];
         const targetSubCategories = [ subCategoryMap.delivered, subCategoryMap.inRoute, ...variationsReturned, subCategoryMap.custody ].filter(Boolean);
-
 
         console.log(`[${context}] Fetching time series for ${startDate} to ${endDate}. Category: '${targetCategoryName}', Subcategories:`, targetSubCategories);
         const supabase = getClient();
@@ -273,55 +237,95 @@ function LogisticsService() {
         }
     }
 
-
-    async function getRegionalSummary(startDate, endDate) {
-        const context = 'getRegionalSummary';
-        console.log(`[${context}] Fetching regional summary (SUM) for ${startDate} to ${endDate}`);
+    // --- Busca total filtrado (Respeita filtro de Região da UI) ---
+    async function getFilteredTotals(startDate, endDate, filters = {}) {
+        const context = 'getFilteredTotals';
+        console.log(`[${context}] Fetching filtered totals for ${startDate} to ${endDate} with filters:`, filters);
         const supabase = getClient();
-
         try {
-
-            const { data, error } = await supabase
+            let query = supabase
                 .from('logistics_daily_metrics')
-                .select('region, value')
+                .select('value')
                 .gte('metric_date', startDate)
                 .lte('metric_date', endDate);
 
-            if (error) throw error;
-            console.log(`[${context}] Raw regional data fetched (${data?.length ?? 0} rows):`, data);
+            // Aplica filtro de Região se não for 'todos'
+            if (filters.region && filters.region !== 'todos') {
+                query = query.eq('region', filters.region);
+                console.log(`[${context}] Applied region filter: ${filters.region}`);
+            }
+            // Filtro de Estado REMOVIDO
 
+            const { data, error } = await query;
 
-            const regions = {};
-            if (data) {
-                data.forEach(item => {
-                    if (item.region) {
-                        const value = typeof item.value === 'number' ? item.value : 0;
-                        regions[item.region] = (regions[item.region] || 0) + value;
-                    }
-                 });
+            if (error) {
+                console.error(`[${context}] Supabase error fetching filtered totals:`, error);
+                throw error;
             }
 
+            const totalSum = data ? data.reduce((sum, item) => sum + (Number(item.value) || 0), 0) : 0;
+            console.log(`%c[${context}] Filtered total sum calculated: ${totalSum}`, 'color: blue; font-weight: bold;');
 
-            const sortedRegions = Object.entries(regions)
-                .map(([region, total]) => ({ region, total }))
-                .sort((a, b) => b.total - a.total);
+            return { data: { totalSum }, error: null };
 
-            console.log(`[${context}] Processed regional summary (SUM):`, sortedRegions);
-            return { data: sortedRegions, error: null };
-
-        } catch (error) {
-            reportServiceError(error, context);
-            return { data: [], error };
+        } catch (errorCatch) {
+            reportServiceError(errorCatch, context);
+            return { data: { totalSum: 0 }, error: errorCatch };
         }
     }
 
+    // --- Busca totais por Região/Estado (IGNORA filtros de UI de Região/Estado) ---
+    async function getRegionalStateTotals(startDate, endDate) {
+        const context = 'getRegionalStateTotals';
+        console.log(`[${context}] Fetching regional/state totals for period: ${startDate} to ${endDate} (Ignoring UI region filter)`);
+        const supabase = getClient();
+        try {
+            const { data, error } = await supabase
+                .from('logistics_daily_metrics')
+                .select('region, state, value')
+                .gte('metric_date', startDate)
+                .lte('metric_date', endDate);
+
+            if (error) {
+                 console.error(`[${context}] Supabase error:`, error);
+                 throw error;
+             }
+             console.log(`[${context}] Raw daily data fetched: ${data?.length ?? 0} rows.`);
+
+             const totals = {};
+
+             if (data) {
+                 data.forEach(item => {
+                     if (item.region && item.state && typeof item.value === 'number' && !isNaN(item.value)) {
+                         if (!totals[item.region]) {
+                             totals[item.region] = { total: 0, states: {} };
+                         }
+                         totals[item.region].total += item.value;
+                         if (!totals[item.region].states[item.state]) {
+                             totals[item.region].states[item.state] = 0;
+                         }
+                         totals[item.region].states[item.state] += item.value;
+                     }
+                 });
+             }
+
+             console.log(`%c[${context}] Processed regional/state totals:`, 'color: blue; font-weight: bold;', totals);
+             return { data: totals, error: null };
+
+         } catch (errorCatch) {
+             reportServiceError(errorCatch, context);
+             return { data: {}, error: errorCatch };
+         }
+     }
+
     return {
-        getLogisticsData,
+        // getLogisticsData, // Mantida caso necessário
         getDistinctRegionsAndStates,
         getConsolidatedLogisticsSummary,
         getReturnReasonsSummary,
         getConsolidatedTimeSeries,
-        getRegionalSummary,
+        getFilteredTotals,
+        getRegionalStateTotals
     };
 }
 
