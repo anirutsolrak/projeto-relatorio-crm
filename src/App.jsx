@@ -6,6 +6,7 @@ import Navigation from './components/Navigation';
 import DashboardPage from './pages/DashboardPage';
 import LoadingOverlay from './components/LoadingOverlay';
 import Logistica from './pages/Logistica';
+import Estoque from './pages/Estoque'; // Importar a nova página
 
 const DESKTOP_BREAKPOINT = 1024;
 
@@ -35,7 +36,6 @@ function App() {
   useEffect(() => {
     const handleResize = () => {
       setIsDesktopView(window.innerWidth >= DESKTOP_BREAKPOINT);
-       // Fechar menu mobile automaticamente se a tela ficar grande
        if (window.innerWidth >= DESKTOP_BREAKPOINT && mobileMenuOpen) {
            setMobileMenuOpen(false);
        }
@@ -43,7 +43,7 @@ function App() {
     window.addEventListener('resize', handleResize);
     handleResize();
     return () => window.removeEventListener('resize', handleResize);
-  }, [mobileMenuOpen]); // Adicionar mobileMenuOpen como dependência
+  }, [mobileMenuOpen]);
 
   useEffect(() => {
       setLoading(true);
@@ -89,7 +89,7 @@ function App() {
         isMounted = false;
         if (subscription) { subscription.unsubscribe(); }
       };
-    }, []);
+    }, [currentPage]); // Adicionado currentPage como dependência
 
   const handleLogout = async () => {
       setLoading(true);
@@ -99,20 +99,22 @@ function App() {
         reportError(error, 'signOut');
         alert('Erro ao fazer logout.');
       }
-      setLoading(false);
+      // O listener onAuthStateChange cuidará de atualizar user/session e loading
   };
 
   const handleAuthSuccessOrGuest = (authUserOrGuest) => {
       if (authUserOrGuest?.role === 'guest') {
         console.log("Guest login handled in App:", authUserOrGuest);
         setUser(authUserOrGuest);
-        setSession(null);
-        setCurrentPage('/');
+        setSession(null); // Garante que não há sessão para convidado
+        setCurrentPage('/'); // Redireciona para a página inicial após login de convidado
         setLoading(false);
       } else if (authUserOrGuest) {
-         setCurrentPage('/');
-         setLoading(false);
+         // Login normal, o listener onAuthStateChange já atualizou user/session
+         setCurrentPage('/'); // Redireciona para a página inicial após login normal
+         setLoading(false); // Garante que o loading pare
       }
+      // Não precisamos de else, pois o listener cuida do resto
   };
 
   const toggleMobileMenu = () => setMobileMenuOpen(prev => !prev);
@@ -132,10 +134,11 @@ function App() {
   const handleNavigate = (path) => {
       console.log("Navigating to:", path);
       setCurrentPage(path);
-      setMobileMenuOpen(false);
+      if (!isDesktopView) { // Fecha o menu mobile ao navegar, apenas se não for desktop
+          setMobileMenuOpen(false);
+      }
   };
 
-  // --- Render Logic ---
   if (loading) {
     return <LoadingOverlay isLoading={true} message="Carregando aplicação..." />;
   }
@@ -153,10 +156,7 @@ function App() {
       width: `calc(100% - ${sidebarWidthPx}px)`
     };
   } else {
-    mainStyle = {
-      marginLeft: '0px',
-      width: '100%'
-    };
+    mainStyle = { marginLeft: '0px', width: '100%' };
   }
 
   let PageComponent;
@@ -165,9 +165,12 @@ function App() {
         case '/logistica':
           PageComponent = <Logistica user={user} onNavigate={handleNavigate} />;
           break;
+        case '/estoque': // Nova Rota
+          PageComponent = <Estoque user={user} onNavigate={handleNavigate} />;
+          break;
         case '/':
         default:
-          PageComponent = <DashboardPage user={user} onLogout={handleLogout} />;
+          PageComponent = <DashboardPage user={user} onLogout={handleLogout} />; // Passa onLogout aqui
           break;
       }
   } catch(e) {
@@ -177,14 +180,13 @@ function App() {
 
   return (
     <div className="relative min-h-screen bg-gray-100">
-       {/* Botão Hambúrguer - Renderizado condicionalmente AQUI */}
        {!isDesktopView && !mobileMenuOpen && (
             <button
-                className="fixed top-4 left-4 z-50 p-2 rounded-md text-gray-700 bg-white shadow-md" // Removido lg:hidden daqui
+                className="fixed top-4 left-4 z-50 p-2 rounded-md text-gray-700 bg-white shadow-md"
                 onClick={toggleMobileMenu}
                 data-name="mobile-menu-button"
                 aria-label="Abrir menu"
-                aria-expanded={mobileMenuOpen} // false aqui, pois só renderiza se for false
+                aria-expanded={mobileMenuOpen}
             >
                 <i className="fas fa-bars text-xl"></i>
             </button>
@@ -194,12 +196,14 @@ function App() {
         activePage={currentPage}
         onNavigate={handleNavigate}
         mobileMenuOpen={mobileMenuOpen}
-        toggleMobileMenu={toggleMobileMenu} // Passar para o botão 'X' interno
+        toggleMobileMenu={toggleMobileMenu}
         isCollapsed={isSidebarCollapsed}
         toggleCollapse={toggleSidebarCollapse}
         expandedWidth={EXPANDED_SIDEBAR_WIDTH}
         collapsedWidth={COLLAPSED_SIDEBAR_WIDTH}
         isDesktopView={isDesktopView}
+        // Passa onLogout para o Navigation poder ter um botão de logout se necessário no futuro
+        // onLogout={handleLogout}
       />
       <main
         className="overflow-y-auto transition-all duration-300 ease-in-out absolute top-0 right-0 bottom-0"
@@ -209,6 +213,8 @@ function App() {
              {PageComponent}
          </div>
       </main>
+       {/* Adiciona um div raiz para o popover se ainda não existir */}
+       <div id="popover-root"></div>
     </div>
   );
 }
