@@ -15,7 +15,7 @@ function Navigation({
 
     try {
         const menuItems = [
-            { name: 'Dashboard', icon: 'fa-gauge', path: '/' },
+            { name: 'Digitação', icon: 'fa-gauge', path: '/' },
             { name: 'Logística', icon: 'fa-truck-fast', path: '/logistica' },
             { name: 'Estoque', icon: 'fa-boxes-stacked', path: '/estoque' } // Novo Item
         ];
