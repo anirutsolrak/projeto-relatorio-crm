@@ -7,153 +7,125 @@ const reportServiceError = (error, context) => {
 function LogisticsService() {
 
     const getClient = () => {
-        try {
-            return getSupabaseClient();
-        } catch (error) {
-            reportServiceError(error, 'getClient');
-            throw new Error("Falha ao obter cliente Supabase no LogisticsService.");
-        }
+        try { return getSupabaseClient(); }
+        catch (error) { reportServiceError(error, 'getClient'); throw new Error("Falha ao obter cliente Supabase no LogisticsService."); }
     };
 
-    // Busca regiões distintas para filtro UI (se necessário no futuro)
     async function getDistinctRegions() {
         const context = 'getDistinctRegions';
-        console.log(`[${context}] Fetching distinct regions.`);
+        console.log(`[${context}] Fetching distinct regions from daily metrics.`);
         const supabase = getClient();
         try {
-            // Busca apenas regiões distintas da tabela daily_metrics
-            const { data, error } = await supabase
-                .from('logistics_daily_metrics')
-                .select('region', { distinct: true }); // Supabase pode otimizar isso
-
-            if (error) throw error;
-
-            const regions = data ? data.map(item => item.region).filter(Boolean).sort() : [];
+             const { data: regionData, error: regionError } = await supabase
+                 .rpc('get_distinct_logistics_regions');
+             if(regionError) throw regionError;
+            const regions = regionData ? regionData.map(item => item.region).filter(Boolean).sort() : [];
             console.log(`[${context}] Result:`, { regions });
-            return { data: { regions }, error: null }; // Retorna apenas a lista de regiões
-
-        } catch (error) {
-            reportServiceError(error, context);
-            return { data: { regions: [] }, error };
-        }
+            return { data: { regions }, error: null };
+        } catch (error) { reportServiceError(error, context); return { data: { regions: [] }, error }; }
     }
 
-    // --- Chama RPC para buscar KPIs (Absoluto Último Dia + Diferença Diária/Período) ---
-    async function getLogisticsKPIs(startDate, endDate) {
-        const context = 'getLogisticsKPIs';
-        console.log(`[${context}] Calling RPC 'get_logistics_kpi_data' for period: ${startDate} to ${endDate}`);
+    async function getAggregatedDailyKPIs(startDate, endDate) {
+        const context = 'getAggregatedDailyKPIs';
+        const functionName = 'get_logistics_daily_aggregated_kpis';
+        console.log(`[${context}] Calling RPC '${functionName}' for period: ${startDate} to ${endDate}`);
         const supabase = getClient();
         try {
-            const { data, error } = await supabase.rpc('get_logistics_kpi_data', {
-                start_date_param: startDate,
-                end_date_param: endDate
-            });
-
+            const { data, error } = await supabase.rpc(functionName, { start_date_param: startDate, end_date_param: endDate });
             if (error) {
                 console.error(`[${context}] RPC error:`, error);
+                if (error.code === 'PGRST200' || error.message.includes('404')) { console.error(`[${context}] ### ERRO 404: FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA NO ENDPOINT REST. Verifique a definição da função e permissões no Supabase. ###`); }
+                else if (error.code === '42883' || (error.message && error.message.includes('function') && error.message.includes('does not exist'))) { console.error(`[${context}] ### FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA OU ASSINATURA INCORRETA NO BANCO! Verifique a criação no Supabase. ###`); }
                 throw error;
             }
-            console.log(`%c[${context}] RPC result:`, 'color: blue; font-weight: bold;', data);
-            // O RPC retorna diretamente o objeto com last_day_absolute e period_daily_diff
-            return { data: data, error: null };
-
-        } catch (errorCatch) {
-            reportServiceError(errorCatch, context);
-            // Retorna uma estrutura padrão em caso de erro para evitar quebras no frontend
-             return {
-                data: {
-                    last_day_absolute: { delivered: 0, inRoute: 0, returned: 0, custody: 0, geral: 0, date: null },
-                    period_daily_diff: { delivered: null, inRoute: null, returned: null, custody: null, geral: null } // null indica falha no cálculo
-                },
-                error: errorCatch
-            };
-        }
+            console.log(`%c[${context}] RPC result:`, 'color: purple; font-weight: bold;', data);
+             return { data: data ?? { delivered: 0, inRoute: 0, returned: 0, custody: 0, geral: 0 }, error: null };
+        } catch (errorCatch) { reportServiceError(errorCatch, context); return { data: { delivered: 0, inRoute: 0, returned: 0, custody: 0, geral: 0 }, error: errorCatch }; }
     }
 
-    // --- Chama RPC para buscar totais diários/período dos Motivos de Devolução ---
+    // Renomeada de volta para get_logistics_kpi_data e ajustada para buscar no range
+    async function getConsolidatedKpisForDateRange(startDate, endDate) {
+        const context = 'getConsolidatedKpisForDateRange';
+        // A função SQL original 'get_logistics_kpi_data' busca o MAX(date) dentro do range
+        const functionName = 'get_logistics_kpi_data';
+        console.log(`[${context}] Calling RPC '${functionName}' for range: ${startDate} to ${endDate}`);
+        const supabase = getClient();
+        try {
+            const { data, error } = await supabase.rpc(functionName, { start_date_param: startDate, end_date_param: endDate });
+             if (error) {
+                 console.error(`[${context}] RPC error:`, error);
+                 if (error.code === 'PGRST200' || error.message.includes('404')) { console.error(`[${context}] ### ERRO 404: FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA NO ENDPOINT REST. Verifique a definição da função e permissões no Supabase. ###`);}
+                 else if (error.code === '42883' || (error.message && error.message.includes('function') && error.message.includes('does not exist'))) { console.error(`[${context}] ### FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA OU ASSINATURA INCORRETA NO BANCO! Verifique a criação no Supabase. ###`); }
+                 throw error;
+             }
+            // A RPC retorna { last_date_found, last_day_absolute }
+            console.log(`%c[${context}] RPC result for range ending ${endDate}:`, 'color: blue; font-weight: bold;', data);
+            // Retorna o objeto completo recebido da RPC
+            return { data: data ?? { last_date_found: null, last_day_absolute: null }, error: null };
+        } catch (errorCatch) { reportServiceError(errorCatch, context); return { data: { last_date_found: null, last_day_absolute: null }, error: errorCatch }; }
+    }
+
     async function getReasonDailyTotals(startDate, endDate) {
         const context = 'getReasonDailyTotals';
-        console.log(`[${context}] Calling RPC 'get_logistics_reason_daily_totals' for period: ${startDate} to ${endDate}`);
+        const functionName = 'get_logistics_reason_daily_totals';
+        console.log(`[${context}] Calling RPC '${functionName}' for period: ${startDate} to ${endDate}`);
         const supabase = getClient();
         try {
-            const { data, error } = await supabase.rpc('get_logistics_reason_daily_totals', {
-                start_date_param: startDate,
-                end_date_param: endDate
-             });
-
+            const { data, error } = await supabase.rpc(functionName, { start_date_param: startDate, end_date_param: endDate });
             if (error) {
                 console.error(`[${context}] RPC error:`, error);
-                throw error;
-            }
+                 if (error.code === 'PGRST200' || error.message.includes('404')) { console.error(`[${context}] ### ERRO 404: FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA NO ENDPOINT REST. Verifique a definição da função e permissões no Supabase. ###`);}
+                 else if (error.code === '42883' || (error.message && error.message.includes('function') && error.message.includes('does not exist'))) { console.error(`[${context}] ### FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA OU ASSINATURA INCORRETA NO BANCO! Verifique a criação no Supabase. ###`); }
+                 throw error;
+             }
             console.log(`%c[${context}] RPC result (reasons):`, 'color: blue; font-weight: bold;', data);
-            // O RPC já retorna o array JSON [{reason, count}] ordenado
             return { data: data || [], error: null };
-
-        } catch (errorCatch) {
-            reportServiceError(errorCatch, context);
-            return { data: [], error: errorCatch };
-        }
+        } catch (errorCatch) { reportServiceError(errorCatch, context); return { data: [], error: errorCatch }; }
     }
 
-    // --- Chama RPC para buscar totais por Região/Estado (Soma do período) ---
-    async function getRegionalStateTotalsPeriod(startDate, endDate) { // Renomeado para clareza
-        const context = 'getRegionalStateTotalsPeriod';
-        console.log(`[${context}] Calling RPC 'get_logistics_regional_state_period_totals' for period: ${startDate} to ${endDate}`);
+    async function getDailyRegionalStateTotals(startDate, endDate) {
+        const context = 'getDailyRegionalStateTotals';
+        const functionName = 'get_logistics_daily_regional_state_totals';
+        console.log(`[${context}] Calling RPC '${functionName}' for period: ${startDate} to ${endDate}`);
         const supabase = getClient();
         try {
-            const { data, error } = await supabase.rpc('get_logistics_regional_state_period_totals', {
-                start_date_param: startDate,
-                end_date_param: endDate
-            });
-
+            const { data, error } = await supabase.rpc(functionName, { start_date_param: startDate, end_date_param: endDate });
             if (error) {
                  console.error(`[${context}] RPC error:`, error);
+                 if (error.code === 'PGRST200' || error.message.includes('404')) { console.error(`[${context}] ### ERRO 404: FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA NO ENDPOINT REST. Verifique a definição da função e permissões no Supabase. ###`);}
+                 else if (error.code === '42883' || (error.message && error.message.includes('function') && error.message.includes('does not exist'))) { console.error(`[${context}] ### FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA OU ASSINATURA INCORRETA NO BANCO! Verifique a criação no Supabase. ###`); }
                  throw error;
             }
-             console.log(`%c[${context}] RPC result (regional totals):`, 'color: blue; font-weight: bold;', data);
-             // O RPC já retorna o objeto JSON { REGIAO: { total: number, states: { ESTADO: total } } }
+             console.log(`%c[${context}] RPC result (daily regional totals):`, 'color: purple; font-weight: bold;', data);
              return { data: data || {}, error: null };
-
-         } catch (errorCatch) {
-             reportServiceError(errorCatch, context);
-             return { data: {}, error: errorCatch };
-         }
+         } catch (errorCatch) { reportServiceError(errorCatch, context); return { data: {}, error: errorCatch }; }
      }
 
-    // --- Busca dados BRUTOS de série temporal consolidada (para gráfico) ---
-    async function getConsolidatedTimeSeries(startDate, endDate) {
-        const context = 'getConsolidatedTimeSeries';
-        const targetCategoryName = 'ENTREGAS';
-        const subCategoryMap = { delivered: 'Entregue', inRoute: 'Em Rota', returned: 'DEVOLUÇÃO', custody: 'Custodia' };
-        const variationsReturned = [...new Set([subCategoryMap.returned, 'DEVOLUCAO', 'DEVOLUÇÃO', 'DEVOLUÃ‡ÃƒO'])];
-        const targetSubCategories = [ subCategoryMap.delivered, subCategoryMap.inRoute, ...variationsReturned, subCategoryMap.custody ].filter(Boolean);
-        console.log(`[${context}] Fetching time series for ${startDate} to ${endDate}. Category: '${targetCategoryName}', Subcategories:`, targetSubCategories);
+    async function getDailyAggregatedTimeSeries(startDate, endDate) {
+        const context = 'getDailyAggregatedTimeSeries';
+        const functionName = 'get_logistics_daily_aggregated_timeseries';
+        console.log(`[${context}] Calling RPC '${functionName}' for ${startDate} to ${endDate}`);
         const supabase = getClient();
         try {
-            // Esta busca continua sendo feita diretamente na tabela
-            const { data, error } = await supabase
-                .from('logistics_consolidated_metrics')
-                .select('metric_date, sub_category, value')
-                .gte('metric_date', startDate)
-                .lte('metric_date', endDate)
-                .eq('category', targetCategoryName)
-                .in('sub_category', targetSubCategories)
-                .order('metric_date', { ascending: true });
-            if (error) throw error;
+             const { data, error } = await supabase.rpc(functionName, { start_date_param: startDate, end_date_param: endDate });
+             if (error) {
+                 console.error(`[${context}] RPC error:`, error);
+                 if (error.code === 'PGRST200' || error.message.includes('404')) { console.error(`[${context}] ### ERRO 404: FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA NO ENDPOINT REST. Verifique a definição da função e permissões no Supabase. ###`);}
+                 else if (error.code === '42883' || (error.message && error.message.includes('function') && error.message.includes('does not exist'))) { console.error(`[${context}] ### FUNÇÃO RPC '${functionName}' NÃO ENCONTRADA OU ASSINATURA INCORRETA NO BANCO! Verifique a criação no Supabase. ###`); }
+                 throw error;
+             }
             console.log(`[${context}] Time series data fetched: ${data?.length ?? 0} points.`);
             return { data: data || [], error: null };
-        } catch (error) {
-            reportServiceError(error, context);
-            return { data: [], error };
-        }
+        } catch (error) { reportServiceError(error, context); return { data: [], error }; }
     }
 
     return {
         getDistinctRegions,
-        getLogisticsKPIs,
+        getAggregatedDailyKPIs,
+        getConsolidatedKpisForDateRange, // Exportando a função renomeada/ajustada
         getReasonDailyTotals,
-        getConsolidatedTimeSeries,
-        getRegionalStateTotalsPeriod
+        getDailyRegionalStateTotals,
+        getDailyAggregatedTimeSeries
     };
 }
 
