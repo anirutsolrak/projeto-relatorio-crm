@@ -294,7 +294,7 @@ function Estoque({ user, onNavigate }) {
                 {!isLoading && currentLowStockItems.length > 0 && (
                     <div className="my-4 p-4 bg-yellow-100 border border-yellow-400 text-yellow-800 rounded" role="alert">
                         <i className="fas fa-exclamation-triangle mr-2"></i>
-                         <span className='font-semibold'>Estoque baixo!</span> Item(ns) abaixo de {formatNumber(STOCK_THRESHOLD, 0)} em {formatDate(latestMetrics?.lastDate)}: {currentLowStockItems.join(', ')}.
+                         <span className='font-semibold'>Estoque baixo!</span> Item(ns) abaixo de {formatNumber(STOCK_THRESHOLD, 0)}k em {formatDate(latestMetrics?.lastDate)}: {currentLowStockItems.join(', ')}.
                      </div>
                 )}
 
