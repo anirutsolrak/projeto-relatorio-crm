@@ -1,3 +1,4 @@
+Estoque.js
 import React, { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import { Chart } from 'chart.js/auto';
 import AnnotationPlugin from 'chartjs-plugin-annotation';
@@ -66,16 +67,17 @@ function Estoque({ user, onNavigate }) {
         const periodKey = `${startDate}_${endDate}`;
         const viewCache = cachedData?.estoque?.[periodKey];
         if (viewCache) {
-
+            console.log(`[Estoque fetchAll] Usando cache para ${periodKey}`);
             const cached = viewCache.data;
             setLatestStockMetricsByProduct(cached.latestStockMetricsByProduct);
             setStockTimeSeriesByProduct(cached.stockTimeSeriesByProduct);
             setLowStockAlertItems(cached.lowStockAlertItems || {});
             setIsLoading(false); setError(null); return;
         }
-
+        console.log(`[Estoque fetchAll] Buscando dados: ${startDate} a ${endDate}`);
 
         if (!estoqueService) { setIsLoading(false); setError("Erro interno: Serviço não inicializado."); return; }
+        if (!startDate || !endDate) { setIsLoading(false); setError("Erro: Datas do período inválidas."); return; }
         setIsLoading(true); setError(null);
         const resetLatest = { click: { ...initialProductData }, mt: { ...initialProductData }, capital: { ...initialProductData } };
         const resetTimeSeries = { click: [], mt: [], capital: [] };
@@ -94,7 +96,7 @@ function Estoque({ user, onNavigate }) {
             if (timeSeriesResult.error) errors.push(`Série Temporal: ${timeSeriesResult.error.message || 'Erro desconhecido'}`);
             if (errors.length > 0) { throw new Error(errors.join('; ')); }
 
-            // 1. Process time series data into a more usable format, ensure values are numbers
+
             const fetchedTimeSeriesDataByProduct = { click: [], mt: [], capital: [] };
              if (timeSeriesResult.data && Array.isArray(timeSeriesResult.data)) {
                  timeSeriesResult.data.forEach(item => {
@@ -102,17 +104,17 @@ function Estoque({ user, onNavigate }) {
                          const numericValue = parseFloat(item.value);
                          fetchedTimeSeriesDataByProduct[item.product_code].push({
                              ...item,
-                             value: isNaN(numericValue) ? null : numericValue, // Store as number or null
-                             item_type_normalized: item.item_type?.toUpperCase().replace('Ã', 'A').replace('Á', 'A') // Pre-normalize for matching
+                             value: isNaN(numericValue) ? null : numericValue,
+                             item_type_normalized: item.item_type?.toUpperCase().replace('Ã', 'A').replace('Á', 'A')
                          });
                      }
                  });
              }
-             // Set the state used by the chart
+
              setStockTimeSeriesByProduct(fetchedTimeSeriesDataByProduct);
 
-             // 2. Prepare the state for KPIs and process data per product
-             const latestAggregatedData = latestResult.data || {}; // Data for Est. Ant, Embossing etc.
+
+             const latestAggregatedData = latestResult.data || {};
              const fetchedLatestDataByProduct = { click: { ...initialProductData }, mt: { ...initialProductData }, capital: { ...initialProductData } };
 
              for (const productCode of productKeys) {
@@ -120,66 +122,66 @@ function Estoque({ user, onNavigate }) {
                  let productLatestDate = null;
                  let latestEntriesForProduct = [];
 
-                 // Find the absolute latest date within this product's timeseries
+
                  if (productTimeSeries.length > 0) {
                      productLatestDate = productTimeSeries.reduce((maxDate, currentEntry) => {
-                         // Ensure dates are valid before comparison
-                         const currentDate = new Date(currentEntry.metric_date);
-                         // Handle potential invalid dates during comparison
-                         const max = maxDate ? new Date(maxDate) : null;
-                         if (isNaN(currentDate.getTime())) return maxDate; // Skip invalid current date
-                         if (!max || isNaN(max.getTime())) return currentEntry.metric_date; // If maxDate is invalid or null, use current
-                         return currentDate > max ? currentEntry.metric_date : maxDate;
-                      }, null); // Initialize with null
 
-                     // Get all entries matching that latest date for this product
+                         const currentDate = new Date(currentEntry.metric_date);
+
+                         const max = maxDate ? new Date(maxDate) : null;
+                         if (isNaN(currentDate.getTime())) return maxDate;
+                         if (!max || isNaN(max.getTime())) return currentEntry.metric_date;
+                         return currentDate > max ? currentEntry.metric_date : maxDate;
+                      }, null);
+
+
                      if(productLatestDate) {
                         latestEntriesForProduct = productTimeSeries.filter(ts => ts.metric_date === productLatestDate);
                      }
                  }
 
-                 fetchedLatestDataByProduct[productCode].lastDate = productLatestDate; // Set the determined latest date for this product
+                 fetchedLatestDataByProduct[productCode].lastDate = productLatestDate;
 
                  if (productLatestDate) {
                      ['PLASTICO', 'CARTA', 'ENVELOPE'].forEach(normalizedItemTypeKey => {
-                         // Find the specific item entry for the latest date found above
+
                          const latestTimeSeriesEntry = latestEntriesForProduct.find(
                              ts => ts.item_type_normalized === normalizedItemTypeKey
                          );
-                         // *** THIS IS THE KEY: Get the 'Saldo' directly from the latest timeseries entry ***
-                         const saldoFromTimeSeries = latestTimeSeriesEntry?.value; // Value should be a number or null here
 
-                         // Get other metrics (Est. Ant, Embossing) from the potentially separate aggregated endpoint result
+                         const saldoFromTimeSeries = latestTimeSeriesEntry?.value;
+
+
                          const aggregatedItemData = latestAggregatedData[normalizedItemTypeKey] || {};
 
                          if (!fetchedLatestDataByProduct[productCode][normalizedItemTypeKey]) {
                              fetchedLatestDataByProduct[productCode][normalizedItemTypeKey] = {};
                          }
 
-                         // Populate the KPI data object
+
                          fetchedLatestDataByProduct[productCode][normalizedItemTypeKey] = {
-                             'Saldo': saldoFromTimeSeries !== undefined ? saldoFromTimeSeries : null, // Use the value from the latest timeseries point
-                             'Estoque Dia Ant.': aggregatedItemData['Estoque Dia Ant.'] !== undefined ? aggregatedItemData['Estoque Dia Ant.'] : null, // Use from aggregated data
-                             'Embossing': aggregatedItemData['Embossing'] !== undefined ? aggregatedItemData['Embossing'] : null, // Use from aggregated data
+                             'Saldo': saldoFromTimeSeries !== undefined ? saldoFromTimeSeries : null,
+                             'Estoque Dia Ant.': aggregatedItemData['Estoque Dia Ant.'] !== undefined ? aggregatedItemData['Estoque Dia Ant.'] : null,
+                             'Embossing': aggregatedItemData['Embossing'] !== undefined ? aggregatedItemData['Embossing'] : null,
                          };
                      });
                  } else {
-                     // If no time series data, clear out the item data as well
+
                      fetchedLatestDataByProduct[productCode].PLASTICO = {};
                      fetchedLatestDataByProduct[productCode].CARTA = {};
                      fetchedLatestDataByProduct[productCode].ENVELOPE = {};
                  }
              }
 
-             // 3. Set the state used by the KPI panels
+
              setLatestStockMetricsByProduct(fetchedLatestDataByProduct);
 
-             // 4. Recalculate low stock alerts based on the correct latest data
+
              const calculatedLowStockAlerts = {};
              for (const productCode of productKeys) {
                  const latestMetrics = fetchedLatestDataByProduct[productCode];
                  calculatedLowStockAlerts[productCode] = [];
-                 if (latestMetrics.lastDate) { // Only calculate if there is data
+                 if (latestMetrics.lastDate) {
                     const plasticoKey = latestMetrics.PLASTICO ? 'PLASTICO' : null;
                     if (plasticoKey && latestMetrics[plasticoKey]?.Saldo !== null && latestMetrics[plasticoKey]?.Saldo < STOCK_THRESHOLD) { calculatedLowStockAlerts[productCode].push('Plástico'); }
                     if (latestMetrics.CARTA?.Saldo !== null && latestMetrics.CARTA?.Saldo < STOCK_THRESHOLD) { calculatedLowStockAlerts[productCode].push('Carta'); }
@@ -188,7 +190,7 @@ function Estoque({ user, onNavigate }) {
              }
              setLowStockAlertItems(calculatedLowStockAlerts);
 
-             // 5. Update Cache
+
              updateCache('estoque', periodKey, { latestStockMetricsByProduct: fetchedLatestDataByProduct, stockTimeSeriesByProduct: fetchedTimeSeriesDataByProduct, lowStockAlertItems: calculatedLowStockAlerts });
 
         } catch (err) {
@@ -199,34 +201,68 @@ function Estoque({ user, onNavigate }) {
     }, [estoqueService, initialProductData, updateCache, cachedData, productKeys]);
 
 
-    useEffect(() => { if (period.startDate && period.endDate) { fetchAllStockData(period.startDate, period.endDate); } }, [period.startDate, period.endDate, fetchAllStockData]);
+
+    useEffect(() => {
+        console.log("[Estoque useEffect Update]", period);
+        if (period.startDate && period.endDate) {
+            fetchAllStockData(period.startDate, period.endDate);
+        } else {
+             console.warn("[Estoque useEffect] Datas do contexto inválidas:", period);
+             setError("Datas inválidas no contexto.");
+             setIsLoading(false);
+        }
+    }, [period.startDate, period.endDate, fetchAllStockData]); // Usar período do contexto
+
 
     useEffect(() => { const handleResize = () => setIsMobileView(window.innerWidth < 768); window.addEventListener('resize', handleResize); handleResize(); return () => window.removeEventListener('resize', handleResize); }, []);
 
     useEffect(() => { const checkOverflow = (container) => container ? container.scrollWidth > container.clientWidth + 5 : false; const chartContainer = stockChartScrollContainerRef.current; const handleResize = () => checkOverflow(chartContainer); window.addEventListener('resize', handleResize); checkOverflow(chartContainer); return () => window.removeEventListener('resize', handleResize); }, [isChartExpanded, stockTimeSeriesByProduct[productKeys[activeProductTab]]]);
 
-    const handleEstoqueUploadSuccess = async (processedMetrics) => { if (!processedMetrics || processedMetrics.length === 0) { setError("Nenhuma métrica válida processada do arquivo."); return; } setIsLoading(true); setError(null); try { const { error: dbError } = await estoqueService.addStockMetrics(processedMetrics); if (dbError) throw dbError; setShowUploader(false); const periodKey = `${period.startDate}_${period.endDate}`; updateCache('estoque', periodKey, null); await fetchAllStockData(period.startDate, period.endDate); } catch (err) { reportError(err, "handleEstoqueUploadSuccess"); setError(`Erro ao salvar dados no banco: ${err.message}`); } finally { setIsLoading(false); } };
+
+    const handleEstoqueUploadSuccess = async (processedMetrics) => {
+        if (!processedMetrics || processedMetrics.length === 0) { setError("Nenhuma métrica válida processada do arquivo."); return; }
+        setIsLoading(true); setError(null);
+        try {
+            const { error: dbError } = await estoqueService.addStockMetrics(processedMetrics);
+            if (dbError) throw dbError;
+            setShowUploader(false);
+            const periodKey = `${period.startDate}_${period.endDate}`;
+            updateCache('estoque', periodKey, null); // Invalida cache para o período atual
+            // Refetch usando o período atual do contexto
+            if (period.startDate && period.endDate) {
+                await fetchAllStockData(period.startDate, period.endDate);
+            } else {
+                console.warn("[handleEstoqueUploadSuccess] Datas do contexto inválidas para refetch.");
+                setError("Erro ao recarregar dados após upload: Datas inválidas.");
+            }
+        } catch (err) {
+            reportError(err, "handleEstoqueUploadSuccess"); setError(`Erro ao salvar dados no banco: ${err.message}`);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const toggleChartExpansion = () => setIsChartExpanded(prev => !prev);
 
     const formatDate = (dateString) => { if (!dateString) return ''; try { const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch (e) { return dateString; } };
-    // Format for chart tooltips and comparison values (precise, 3 decimals)
+
     const formatNumber = (value, decimals = 3) => { if (value === null || value === undefined || isNaN(Number(value))) return '-'; const num = Number(value); return num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
-    // Format for main KPI display (precise, 3 decimals, no 'K')
+
     const formatNumberKPI = (value) => {
         if (value === null || value === undefined || isNaN(Number(value))) return '-';
         const num = Number(value);
-        // Display with 3 decimal places for KPIs, no rounding, no 'K'
+
         return num.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 });
      };
     const formatPercent = (value) => { if (value === null || value === undefined || isNaN(Number(value))) return '- %'; const num = Number(value); return num.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 }); };
 
     const stockChartData = useMemo(() => {
         const productCode = productKeys[activeProductTab];
-        // Use the state that was populated with numeric values and sorted
+
         const currentStockTimeSeries = stockTimeSeriesByProduct[productCode] || [];
         if (!currentStockTimeSeries || currentStockTimeSeries.length === 0) return { labels: [], datasets: [] };
 
-        // Data should already be processed correctly, ensure labels are sorted
+
         const sortedTimeSeries = [...currentStockTimeSeries].sort((a, b) => new Date(a.metric_date) - new Date(b.metric_date));
         const allLabels = [...new Set(sortedTimeSeries.map(d => d.metric_date))].sort((a,b) => new Date(a) - new Date(b));
 
@@ -237,9 +273,9 @@ function Estoque({ user, onNavigate }) {
 
         const datasets = itemTypes.map(itemType => {
             const fullDataPoints = allLabels.map(label => {
-                // Find the point using the pre-normalized key
+
                 const point = sortedTimeSeries.find(d => d.metric_date === label && (d.item_type_normalized === itemType));
-                return point ? point.value : null; // value is already number or null
+                return point ? point.value : null;
              });
             let dataPointsToShow = fullDataPoints; if (!isMobileView && !isChartExpanded && allLabels.length > 3) { dataPointsToShow = fullDataPoints.slice(-3); }
             const pointRadius = allLabels.length > 30 ? (isChartExpanded ? 1 : 0) : 3;
@@ -264,13 +300,13 @@ function Estoque({ user, onNavigate }) {
     const canUpload = user && user.role !== 'guest';
 
     function renderContent(productTabKey) {
-        // Use the state specifically populated for KPIs
+
         const latestMetrics = latestStockMetricsByProduct[productTabKey];
         const hasLatestData = latestMetrics && latestMetrics.lastDate;
         const currentLowStockItems = lowStockAlertItems[productTabKey] || [];
-        // Use the state specifically populated for Charts
+
         const hasTimeSeriesData = stockTimeSeriesByProduct[productTabKey] && stockTimeSeriesByProduct[productTabKey].length > 0;
-        // Determine the key for PLASTICO for display, handling potential variations if needed (though normalized now)
+
         const plasticoKeyForKPI = latestMetrics?.PLASTICO ? 'PLASTICO' : null;
 
 
@@ -307,7 +343,7 @@ function Estoque({ user, onNavigate }) {
                      <div className="mb-6">
                          <h3 className="text-xl font-semibold text-gray-800 mb-4">Saldo em {formatDate(latestMetrics?.lastDate)}</h3>
                          <div className="kpi-grid grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            {/* Use formatNumberKPI for the main KPI value */}
+
                             {plasticoKeyForKPI && latestMetrics[plasticoKeyForKPI] ? <KPIPanel title="Plástico" value={formatNumberKPI(latestMetrics[plasticoKeyForKPI]?.Saldo)} comparison={`Est. Ant: ${formatNumberKPI(latestMetrics[plasticoKeyForKPI]?.['Estoque Dia Ant.'])} | Saída: ${formatNumber(latestMetrics[plasticoKeyForKPI]?.Embossing, 3)}`} /> : <KPIPanel title="Plástico" value="-" comparison="-" />}
                             {latestMetrics.CARTA ? <KPIPanel title="Carta" value={formatNumberKPI(latestMetrics.CARTA?.Saldo)} comparison={`Est. Ant: ${formatNumberKPI(latestMetrics.CARTA?.['Estoque Dia Ant.'])} | Saída: ${formatNumber(latestMetrics.CARTA?.Embossing, 3)}`} /> : <KPIPanel title="Carta" value="-" comparison="-"/> }
                             {latestMetrics.ENVELOPE ? <KPIPanel title="Envelope" value={formatNumberKPI(latestMetrics.ENVELOPE?.Saldo)} comparison={`Est. Ant: ${formatNumberKPI(latestMetrics.ENVELOPE?.['Estoque Dia Ant.'])} | Saída: ${formatNumber(latestMetrics.ENVELOPE?.Embossing, 3)}`} /> : <KPIPanel title="Envelope" value="-" comparison="-"/> }
@@ -329,7 +365,7 @@ function Estoque({ user, onNavigate }) {
                                 <div ref={stockChartScrollContainerRef} className={`absolute inset-0 ${isChartExpanded ? 'overflow-x-auto' : 'overflow-x-hidden'}`}>
                                      {productKeys[activeProductTab] === productTabKey && hasTimeSeriesData ? (
                                          <div style={{ minWidth: stockChartMinWidth, height: '100%' }} className="relative">
-                                             {/* Chart uses stockChartData which pulls from stockTimeSeriesByProduct */}
+
                                              <ChartComponent type="line" data={stockChartData} options={stockChartOptions} />
                                          </div>
                                       ) : !hasTimeSeriesData && activeProductTab === productKeys.indexOf(productTabKey) ? renderNoDataMessage("Sem dados de saldo para o gráfico.") : null}
@@ -362,7 +398,7 @@ function Estoque({ user, onNavigate }) {
 
                 {showUploader && canUpload && ( <div className="my-6"> <FileUploaderEstoque onFileUpload={handleEstoqueUploadSuccess} user={user} onClose={() => setShowUploader(false)} /> </div> )}
 
-                <PeriodFilter />
+                <PeriodFilter /> {/* Remover props initialPeriod e onPeriodChange */}
 
                 <Tabs selectedIndex={activeProductTab} onSelect={index => setActiveProductTab(index)} className="mb-4">
                     <TabList className="flex space-x-2 border-b border-gray-200 mb-3">

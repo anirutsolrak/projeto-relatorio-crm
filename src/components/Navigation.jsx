@@ -1,3 +1,4 @@
+Navigation.js
 import React from 'react';
 
 function Navigation({
@@ -15,9 +16,9 @@ function Navigation({
 
     try {
         const menuItems = [
-            { name: 'Digitação', icon: 'fa-gauge', path: '/' },
+            { name: 'Digitação', icon: 'fa-gauge', path: '/digitacao' }, // Corrigido path para /dashboard
             { name: 'Logística', icon: 'fa-truck-fast', path: '/logistica' },
-            { name: 'Estoque', icon: 'fa-boxes-stacked', path: '/estoque' } // Novo Item
+            { name: 'Estoque', icon: 'fa-boxes-stacked', path: '/estoque' }
         ];
 
         const currentWidth = isCollapsed ? collapsedWidth : expandedWidth;

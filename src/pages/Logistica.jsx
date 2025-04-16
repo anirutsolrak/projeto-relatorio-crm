@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useContext } from 'react';
 import LoadingOverlay from '../components/LoadingOverlay';
 import PeriodFilter from '../components/PeriodFilter';
 import FileUploaderLogistics from '../components/FileUploaderLogistics';
@@ -10,18 +10,19 @@ import LogisticsService from '../utils/logisticsService';
 import getSupabaseClient from '../utils/supabaseClient';
 import { Chart } from 'chart.js/auto';
 import AnnotationPlugin from 'chartjs-plugin-annotation';
+import { FilterContext } from '../contexto/FilterContext';
 
-// Registra plugin
+
 Chart.register(AnnotationPlugin);
 
-// --- Funções Auxiliares de Formatação e Cálculo ---
+
 const formatDate = (dateString) => { if (!dateString) return ''; try { const date = new Date(dateString); if (isNaN(date.getTime())) return dateString; return date.toLocaleDateString('pt-BR', { timeZone: 'UTC' }); } catch (e) { return dateString; } };
 const formatNumber = (value, decimals = 0) => { if (value === null || value === undefined) { return '-'; } const num = Number(value); if (isNaN(num)) { return 'Invál.'; } if (decimals > 0) { let fV; const aN = Math.abs(num); if (aN >= 1e6) { fV = (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } else if (aN >= 1e3) { fV = (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' K'; } else { fV = num.toLocaleString('pt-BR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }); } return `R$ ${fV}`; } const absCount = Math.abs(num); if (absCount >= 1e6) { return (num / 1e6).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' M'; } if (absCount >= 1e3) { return (num / 1e3).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 1 }) + ' K'; } return num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); };
 const formatPercent = (value, decimals = 1) => { if (value === null || value === undefined || isNaN(Number(value))) return '-'; const num = Number(value); return num.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: decimals, maximumFractionDigits: decimals }); };
 const calculatePercentageChange = (current, previous) => { if (previous === null || previous === undefined || previous === 0 || current === null || current === undefined) { return null; } return ((current - previous) / Math.abs(previous)) * 100; };
 const getPreviousPeriod = (startDateStr, endDateStr) => { try { const start = new Date(startDateStr + 'T00:00:00Z'); const end = new Date(endDateStr + 'T00:00:00Z'); if (isNaN(start.getTime()) || isNaN(end.getTime())) { return { previousStartDate: null, previousEndDate: null }; } const diff = end.getTime() - start.getTime(); if (diff < 0) return { previousStartDate: null, previousEndDate: null }; const prevEndDate = new Date(start.getTime() - 24 * 60 * 60 * 1000); const prevStartDate = new Date(prevEndDate.getTime() - diff); return { previousStartDate: prevStartDate.toISOString().split('T')[0], previousEndDate: prevEndDate.toISOString().split('T')[0] }; } catch (e) { return { previousStartDate: null, previousEndDate: null }; } };
 
-// Componente para comparação simples PoP (Ajustado para retornar 'Novo' ou null)
+
 const renderSimpleComparison = (currentValue, previousValue) => {
     const current = Number(currentValue);
     const previous = Number(previousValue);
@@ -45,7 +46,7 @@ const renderSimpleComparison = (currentValue, previousValue) => {
     return React.createElement('span', { className: `text-xs ${textClass} inline-flex items-center gap-1 whitespace-nowrap` }, React.createElement('i', { className: iconClass }), React.createElement('span', null, changeText), React.createElement('span', {className:"text-gray-400"}, "(vs ant.)"));
 };
 
-// Componente para Resumo Mobile
+
 function ChartMobileSummary({ title, data = [], onExpandClick, expandButtonText }) {
     const formatValue = (val, isPercent = false) => { if (val === null || val === undefined || isNaN(Number(val))) return '-'; const num = Number(val); const options = isPercent ? { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 } : { minimumFractionDigits: 0, maximumFractionDigits: 0 }; return num.toLocaleString('pt-BR', options); };
     return ( <div className="bg-white p-4 rounded-lg shadow-md h-full flex flex-col justify-between min-h-[200px]"> <div> <h3 className="text-base font-semibold text-gray-700 mb-4">{title}</h3> <div className="space-y-1 text-sm max-h-48 overflow-y-auto pr-2"> {data.map((item, index) => ( <div key={index} className="flex justify-between"> <TruncatedTextWithPopover className="text-gray-500 mr-2" title={item.label}>{item.label}:</TruncatedTextWithPopover> <span className="font-medium flex-shrink-0">{formatValue(item.value, item.isPercent)}</span> </div> ))} {data.length === 0 && <p className='text-gray-400 text-xs italic'>Nenhum dado para resumir.</p>} </div> </div> {onExpandClick && ( <div className="mt-4 text-right"> <button onClick={onExpandClick} className="btn btn-secondary btn-xs py-1 px-2">{expandButtonText || "Ver Gráfico"}</button> </div> )} </div> );
@@ -55,6 +56,7 @@ function ChartMobileSummary({ title, data = [], onExpandClick, expandButtonText 
 export default function LogisticaView({ onNavigate, user }) {
     const reportError = (error, context = 'LogisticaView') => console.error(`[${context}] Error:`, error?.message || error);
     const logisticsService = useMemo(() => LogisticsService(), []);
+    const { period } = useContext(FilterContext); // Usar o período do contexto
 
     const [showConsolidatedUploader, setShowConsolidatedUploader] = useState(false);
     const [showDailyUploader, setShowDailyUploader] = useState(false);
@@ -71,9 +73,7 @@ export default function LogisticaView({ onNavigate, user }) {
     const [expandedRegion, setExpandedRegion] = useState(null);
     const timeSeriesChartScrollContainerRef = useRef(null);
     const reasonsChartScrollContainerRef = useRef(null);
-    const defaultEndDate = new Date().toISOString().split('T')[0];
-    const defaultStartDate = new Date(new Date().setDate(new Date().getDate() - 6)).toISOString().split('T')[0];
-    const [filters, setFilters] = useState({ dataInicio: defaultStartDate, dataFim: defaultEndDate });
+
 
      const fetchAllLogisticData = useCallback(async (startDate, endDate) => {
         console.log(`[LogisticaView fetchAll] Iniciando busca: ${startDate} a ${endDate}`);
@@ -113,19 +113,54 @@ export default function LogisticaView({ onNavigate, user }) {
         finally { setIsLoadingData(false); console.log(`[LogisticaView fetchAll] Busca finalizada.`); }
     }, [logisticsService]);
 
-    useEffect(() => { console.log("[LogisticaView useEffect Update]", filters); fetchAllLogisticData(filters.dataInicio, filters.dataFim).catch(err => reportError(err, "useEffectUpdate[fetchAllLogisticData]")); }, [filters.dataInicio, filters.dataFim, fetchAllLogisticData]);
+
+    useEffect(() => {
+        console.log("[LogisticaView useEffect Update]", period);
+        if (period.startDate && period.endDate) {
+            fetchAllLogisticData(period.startDate, period.endDate).catch(err => reportError(err, "useEffectUpdate[fetchAllLogisticData]"));
+        } else {
+            console.warn("[LogisticaView useEffect] Datas do contexto inválidas:", period);
+            setDataError("Datas inválidas no contexto.");
+            setIsLoadingData(false);
+        }
+    }, [period.startDate, period.endDate, fetchAllLogisticData]);
+
     useEffect(() => { const handleResize = () => setIsMobileView(window.innerWidth < 768); window.addEventListener('resize', handleResize); handleResize(); return () => window.removeEventListener('resize', handleResize); }, []);
     useEffect(() => { const checkOverflow = (container) => container ? container.scrollWidth > container.clientWidth + 5 : false; const consContainer = timeSeriesChartScrollContainerRef.current; const reasonsContainer = reasonsChartScrollContainerRef.current; const handleResize = () => { checkOverflow(consContainer); checkOverflow(reasonsContainer); }; window.addEventListener('resize', handleResize); checkOverflow(consContainer); checkOverflow(reasonsContainer); return () => window.removeEventListener('resize', handleResize); }, [isTimeSeriesChartExpanded, isReasonsChartExpanded, timeSeriesData, reasonDailyTotals]);
 
-    const handlePeriodChange = useCallback((newPeriod) => { console.log("[LogisticaView handlePeriodChange]", newPeriod); if (!newPeriod.startDate || !newPeriod.endDate) { console.error("Período inválido:", newPeriod); setDataError("Datas inválidas."); return; } if (new Date(newPeriod.endDate) < new Date(newPeriod.startDate)) { console.warn("Data final anterior."); setDataError("Data final anterior à inicial."); return; } setDataError(null); setFilters({ dataInicio: newPeriod.startDate, dataFim: newPeriod.endDate }); }, []);
 
-    const handleConsolidatedUploadSuccess = useCallback(async (summary) => { console.log("Upload Consolidado Concluído:", summary); setIsLoadingData(true); await fetchAllLogisticData(filters.dataInicio, filters.dataFim); setIsLoadingData(false); }, [filters.dataInicio, filters.dataFim, fetchAllLogisticData]);
-    const handleDailyUploadSuccess = useCallback(async (summary) => { console.log("Upload Diário Concluído:", summary); setIsLoadingData(true); await fetchAllLogisticData(filters.dataInicio, filters.dataFim); setIsLoadingData(false); }, [filters.dataInicio, filters.dataFim, fetchAllLogisticData]);
+
+    const handleConsolidatedUploadSuccess = useCallback(async (summary) => {
+        console.log("Upload Consolidado Concluído:", summary);
+        setIsLoadingData(true);
+        // Usa o período atual do contexto para refetch
+        if (period.startDate && period.endDate) {
+            await fetchAllLogisticData(period.startDate, period.endDate);
+        } else {
+            console.warn("[LogisticaView handleConsolidatedUploadSuccess] Datas do contexto inválidas para refetch.");
+            setDataError("Erro ao recarregar dados após upload: Datas inválidas.");
+        }
+        setIsLoadingData(false);
+    }, [period.startDate, period.endDate, fetchAllLogisticData]); // Depende do período do contexto
+
+    const handleDailyUploadSuccess = useCallback(async (summary) => {
+        console.log("Upload Diário Concluído:", summary);
+        setIsLoadingData(true);
+        // Usa o período atual do contexto para refetch
+        if (period.startDate && period.endDate) {
+             await fetchAllLogisticData(period.startDate, period.endDate);
+         } else {
+             console.warn("[LogisticaView handleDailyUploadSuccess] Datas do contexto inválidas para refetch.");
+             setDataError("Erro ao recarregar dados após upload: Datas inválidas.");
+         }
+        setIsLoadingData(false);
+    }, [period.startDate, period.endDate, fetchAllLogisticData]); // Depende do período do contexto
+
 
     const totalGeralDiarioAtual = useMemo(() => { const currentKpis = dailyKpiData?.current; if (!currentKpis) return 0; return (currentKpis.delivered ?? 0) + (currentKpis.returned ?? 0) + (currentKpis.custody ?? 0) + (currentKpis.inRoute ?? 0); }, [dailyKpiData]);
     const totalGeralDiarioAnterior = useMemo(() => { const previousKpis = dailyKpiData?.previous; if (!previousKpis) return null; return (previousKpis.delivered ?? 0) + (previousKpis.returned ?? 0) + (previousKpis.custody ?? 0) + (previousKpis.inRoute ?? 0); }, [dailyKpiData]);
 
-    // Função de Callback para renderizar a comparação completa
+
     const renderFullComparison = useCallback((kpiKey, currentDailyAggregate, previousDailyAggregate, consolidatedData) => {
         const currentVal = currentDailyAggregate?.[kpiKey];
         const previousVal = previousDailyAggregate?.[kpiKey];
@@ -151,13 +186,13 @@ export default function LogisticaView({ onNavigate, user }) {
                  popComparison
             )
         );
-    }, [isMobileView, totalGeralDiarioAtual, formatDate, formatNumber, formatPercent, renderSimpleComparison]); // Adiciona renderSimpleComparison
+    }, [isMobileView, totalGeralDiarioAtual, renderSimpleComparison]); // Adicionado renderSimpleComparison explicitamente
 
 
     const timeSeriesChartData = useMemo(() => { const timeSeries = timeSeriesData || []; if (timeSeries.length === 0) return { labels: [], datasets: [] }; const labels = [...new Set(timeSeries.map(d => d.metric_date))].sort(); let labelsToShow = labels; if (!isMobileView && !isTimeSeriesChartExpanded && labels.length > 3) { labelsToShow = labels.slice(-3); } const formattedLabelsToShow = labelsToShow.map(l => formatDate(l)); const categories = ['Entregue', 'Em Rota', 'DEVOLUÇÃO', 'Custodia']; const colors = { 'Entregue': '#10b981', 'Em Rota': '#3b82f6', 'DEVOLUÇÃO': '#ef4444', 'Custodia': '#f59e0b' }; const datasets = categories.map(cat => { const fullDataPoints = labels.map(label => { const point = timeSeries.find(d => d.metric_date === label && (d.sub_category === cat || (cat === 'DEVOLUÇÃO' && ['DEVOLUCAO', 'DEVOLUÇÃO', 'DEVOLUÃ‡ÃƒO'].includes(d.sub_category))) ); return point ? point.value : null; }); let dataPointsToShow = fullDataPoints; if (!isMobileView && !isTimeSeriesChartExpanded && labels.length > 3) { dataPointsToShow = fullDataPoints.slice(-3); } const pointRadius = labels.length > 30 ? (isTimeSeriesChartExpanded ? 1: 0) : 3; return { label: cat, data: dataPointsToShow, borderColor: colors[cat], backgroundColor: `${colors[cat]}33`, tension: 0.1, yAxisID: 'y', fill: false, pointRadius: pointRadius, pointHoverRadius: 5, spanGaps: true, }; }); return { labels: formattedLabelsToShow, datasets }; }, [timeSeriesData, isTimeSeriesChartExpanded, isMobileView]);
     const returnReasonsChartData = useMemo(() => { if (!reasonDailyTotals || reasonDailyTotals.length === 0) return { labels: [], datasets: [] }; const reasonColors = ['#3b82f6', '#ef4444', '#f97316', '#eab308', '#10b981', '#14b8a6', '#6366f1', '#a855f7', '#ec4899', '#64748b', '#f43f5e', '#84cc16']; const dataToShow = isReasonsChartExpanded ? reasonDailyTotals : reasonDailyTotals.slice(0, isMobileView ? 5 : 7); return { labels: dataToShow.map(r => r.reason), datasets: [{ label: 'Total Diário/Período', data: dataToShow.map(r => r.count), backgroundColor: dataToShow.map((_, index) => reasonColors[index % reasonColors.length]) }] }; }, [reasonDailyTotals, isMobileView, isReasonsChartExpanded]);
     const lineChartOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, scales: { x: { ticks: { autoSkip: !isTimeSeriesChartExpanded, maxRotation: (isMobileView || isTimeSeriesChartExpanded) ? 60 : 0, font: { size: 10 }, padding: 5 } }, y: { beginAtZero: true, title: { display: true, text: 'Quantidade (Diária Agregada)', font: { size: 11 } }, ticks: { font: { size: 10 }} } }, plugins: { legend: { position: 'bottom', labels: { font: {size: 11}, usePointStyle: true, pointStyleWidth: 8 } } } }), [isMobileView, isTimeSeriesChartExpanded]);
-    const barChartOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { font: { size: 10 }}}, y: { ticks: { autoSkip: false, font: { size: 10 } } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `Total Diário/Período: ${formatNumber(ctx.raw, 0)}` } } } }), [formatNumber]);
+    const barChartOptions = useMemo(() => ({ responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { font: { size: 10 }}}, y: { ticks: { autoSkip: false, font: { size: 10 } } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => `Total Diário/Período: ${formatNumber(ctx.raw, 0)}` } } } }), []);
     const calculateBarChartHeight = (itemCount) => Math.max(300, itemCount * 28 + 100);
     const reasonsChartHeight = isReasonsChartExpanded ? calculateBarChartHeight(reasonDailyTotals.length) : 400;
     const timeSeriesChartMinWidth = (!isMobileView && !isTimeSeriesChartExpanded && timeSeriesChartData.labels.length > 0) ? '100%' : `${Math.max(600, (timeSeriesData?.length || 0) * (isMobileView ? 35 : 50))}px`;
@@ -194,22 +229,23 @@ export default function LogisticaView({ onNavigate, user }) {
                 </div>
                  {showConsolidatedUploader && canUpload && ( <div className="my-6"> <FileUploaderLogistics onFileUpload={handleConsolidatedUploadSuccess} user={user} onClose={() => setShowConsolidatedUploader(false)} /> </div> )}
                  {showDailyUploader && canUpload && ( <div className="my-6"> <FileUploaderLogisticsDaily onFileUpload={handleDailyUploadSuccess} user={user} onClose={() => setShowDailyUploader(false)} /> </div> )}
-                 <PeriodFilter onPeriodChange={handlePeriodChange} initialPeriod={{ startDate: filters.dataInicio, endDate: filters.dataFim }} />
 
-                 {/* --- KPIs (Valores Diários Agregados) --- */}
+                 <PeriodFilter />
+
+
                 {isLoadingData && renderLoading("Carregando KPIs...")}
                 {!isLoadingData && !dataError && !currentDailyKpis && renderNoDataMessage("Nenhum dado encontrado para o período.")}
                 {hasDailyKpis && (
-                    <div className="kpi-grid grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4 my-6"> {/* Ajustado grid-cols-1 para mobile */}
-                         <KPIPanel title="Entregue (Diário/Per.)" value={formatNumber(currentDailyKpis.delivered, 0)} comparison={renderFullComparison('delivered', currentDailyKpis, previousDailyKpis, consolidatedKpiData, totalGeralDiarioAtual, isMobileView)}/>
-                         <KPIPanel title="Devolvido (Diário/Per.)" value={formatNumber(currentDailyKpis.returned, 0)} comparison={renderFullComparison('returned', currentDailyKpis, previousDailyKpis, consolidatedKpiData, totalGeralDiarioAtual, isMobileView)}/>
-                         <KPIPanel title="Custódia (Diário/Per.)" value={formatNumber(currentDailyKpis.custody, 0)} comparison={renderFullComparison('custody', currentDailyKpis, previousDailyKpis, consolidatedKpiData, totalGeralDiarioAtual, isMobileView)} />
-                         <KPIPanel title="Em Rota (Diário/Per.)" value={formatNumber(currentDailyKpis.inRoute, 0)} comparison={renderFullComparison('inRoute', currentDailyKpis, previousDailyKpis, consolidatedKpiData, totalGeralDiarioAtual, isMobileView)} />
+                    <div className="kpi-grid grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4 my-6">
+                         <KPIPanel title="Entregue (Diário/Per.)" value={formatNumber(currentDailyKpis.delivered, 0)} comparison={renderFullComparison('delivered', currentDailyKpis, previousDailyKpis, consolidatedKpiData)}/>
+                         <KPIPanel title="Devolvido (Diário/Per.)" value={formatNumber(currentDailyKpis.returned, 0)} comparison={renderFullComparison('returned', currentDailyKpis, previousDailyKpis, consolidatedKpiData)}/>
+                         <KPIPanel title="Custódia (Diário/Per.)" value={formatNumber(currentDailyKpis.custody, 0)} comparison={renderFullComparison('custody', currentDailyKpis, previousDailyKpis, consolidatedKpiData)} />
+                         <KPIPanel title="Em Rota (Diário/Per.)" value={formatNumber(currentDailyKpis.inRoute, 0)} comparison={renderFullComparison('inRoute', currentDailyKpis, previousDailyKpis, consolidatedKpiData)} />
                          <KPIPanel title="Total Geral (Diário/Per.)" value={formatNumber(totalGeralDiarioAtual, 0)} comparison={renderSimpleComparison(totalGeralDiarioAtual, totalGeralDiarioAnterior)} />
                     </div>
                 )}
 
-                 {/* --- Gráficos --- */}
+
                  {!isLoadingData && !dataError && (timeSeriesData.length > 0 || reasonDailyTotals.length > 0) && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
                         <div className="bg-white p-4 rounded-lg shadow-md flex flex-col min-h-[400px]">
@@ -223,7 +259,7 @@ export default function LogisticaView({ onNavigate, user }) {
                     </div>
                  )}
 
-                 {/* --- KPIs Regionais/Estaduais --- */}
+
                  {!isLoadingData && !dataError && Object.keys(dailyRegionalStateTotals).length > 0 && (
                      <div className="mb-6">
                          <h3 className="text-xl font-semibold text-gray-800 mb-4">Totais Diários por Região (Período)</h3>

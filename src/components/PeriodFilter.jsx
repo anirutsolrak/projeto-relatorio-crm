@@ -1,8 +1,8 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { FilterContext } from '../contexto/FilterContext';
+import { FilterContext } from '../contexto/FilterContext'; // Ajuste o caminho se necessário
 
 function PeriodFilter() {
-    const reportError = (error) => console.error("PeriodFilter Error:", error); // Adicionada função reportError
+    const reportError = (error) => console.error("PeriodFilter Error:", error);
     const { period, setPeriod } = useContext(FilterContext);
 
     const determineCurrentPreset = (start, end) => {
@@ -63,12 +63,13 @@ function PeriodFilter() {
              startDate = startOfLastMonth.toISOString().split('T')[0];
              endDate = endOfLastMonth.toISOString().split('T')[0];
         } else {
-            return; // Não faz nada para 'custom' aqui
+            console.warn("Invalid preset selected:", newPreset);
+            return;
         }
 
          setCustomStartDate(startDate);
          setCustomEndDate(endDate);
-         setPeriod({ startDate, endDate }); // Chama a função do contexto
+         setPeriod({ startDate, endDate }); // Chama setPeriod do contexto
          setCurrentActivePreset(newPreset);
     };
 
@@ -81,7 +82,7 @@ function PeriodFilter() {
              return;
          }
 
-         setPeriod({ startDate: customStartDate, endDate: customEndDate }); // Chama a função do contexto
+         setPeriod({ startDate: customStartDate, endDate: customEndDate }); // Chama setPeriod do contexto
          setCurrentActivePreset('custom');
     };
 
@@ -126,7 +127,7 @@ function PeriodFilter() {
                             value={customStartDate}
                             onChange={(e) => {
                                  setCustomStartDate(e.target.value);
-                                 setCurrentActivePreset('custom');
+                                 setCurrentActivePreset('custom'); // Muda para custom ao editar data
                              }}
                              required
                             data-name="start-date-input"
@@ -141,7 +142,7 @@ function PeriodFilter() {
                             value={customEndDate}
                             onChange={(e) => {
                                  setCustomEndDate(e.target.value);
-                                 setCurrentActivePreset('custom');
+                                 setCurrentActivePreset('custom'); // Muda para custom ao editar data
                             }}
                             required
                             data-name="end-date-input"
@@ -159,7 +160,7 @@ function PeriodFilter() {
             </div>
         );
     } catch (error) {
-        reportError(error); // Usa a função reportError definida
+        reportError(error);
         return <div className="filter-container error p-4 bg-red-100 text-red-700">Erro no filtro de período.</div>;
     }
 }
